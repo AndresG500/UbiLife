@@ -1,0 +1,72 @@
+from fastapi import APIRouter, HTTPException, Depends
+from models.model_familiar import CrearFamiliar, VerificarFamiliar
+from services.service_familiar import (
+    registrar_familiar, verificar_familiar,
+    listar_grupos_familiar, listar_pacientes_familiar,
+    actualizar_fcm_familiar,
+)
+from pydantic import BaseModel, Field
+
+class FCMTokenFamiliar(BaseModel):
+    token: str = Field(..., max_length=512)
+from services.service_auth import revocar_token
+from security.dependencies import get_familiar_actual, oauth2_scheme
+from security.jwt_handler import verificar_token
+from database.database import get_database
+
+router = APIRouter(prefix="/familiares", tags=["Familiares"])
+
+
+@router.post("/registrar")
+async def registrar(datos: CrearFamiliar):
+    resultado = await registrar_familiar(datos)
+    if "error" in resultado:
+        raise HTTPException(status_code=400, detail=resultado["error"])
+    return resultado
+
+
+@router.post("/verificar")
+async def verificar(datos: VerificarFamiliar):
+    resultado = await verificar_familiar(datos.email, datos.password)
+    if "mensaje" in resultado:
+        raise HTTPException(status_code=401, detail=resultado["mensaje"])
+    return resultado
+
+
+@router.post("/logout")
+async def logout(
+    token: str = Depends(oauth2_scheme),
+    familiar_actual=Depends(get_familiar_actual),
+):
+    datos = verificar_token(token)
+    if datos:
+        await revocar_token(datos.get("jti"), datos.get("exp"))
+    db = get_database()
+    await db["UbicacionesFamiliares"].delete_many({"familiar_id": str(familiar_actual["_id"])})
+    return {"mensaje": "Sesión cerrada exitosamente"}
+
+
+@router.get("/grupos")
+async def mis_grupos(familiar_actual=Depends(get_familiar_actual)):
+    familiar_id = str(familiar_actual["_id"])
+    resultado   = await listar_grupos_familiar(familiar_id)
+    if isinstance(resultado, dict) and "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado
+
+
+@router.patch("/fcm-token")
+async def actualizar_fcm_token_familiar(
+    datos: FCMTokenFamiliar,
+    familiar_actual = Depends(get_familiar_actual),
+):
+    return await actualizar_fcm_familiar(familiar_actual["email"], datos.token)
+
+
+@router.get("/pacientes")
+async def mis_pacientes(familiar_actual=Depends(get_familiar_actual)):
+    familiar_id = str(familiar_actual["_id"])
+    resultado   = await listar_pacientes_familiar(familiar_id)
+    if isinstance(resultado, dict) and "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado

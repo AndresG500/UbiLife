@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "274176685502",
+    "project_id": "ubilife-5da69",
+    "storage_bucket": "ubilife-5da69.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:274176685502:android:46242f2725405d087bf5ef",
+        "android_client_info": {
+          "package_name": "com.UbiLife.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDFC3av8ISjnI2wdQxG3kFMYKCm3cxbA5A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
