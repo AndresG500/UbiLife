@@ -1,12 +1,20 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 import os
+import ssl
 from utils.Logger import Logger
 
 load_dotenv()
 
 _client = None
 _db = None
+
+
+def _tls_context() -> ssl.SSLContext:
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
 
 def get_database():
@@ -17,7 +25,11 @@ def get_database():
     
     try:
         uri = os.getenv("MONGO_URI")
-        _client = AsyncIOMotorClient(uri)
+        _client = AsyncIOMotorClient(
+            uri,
+            tls=True,
+            ssl_context=_tls_context(),
+        )
         _db = _client["UbiLife"]
         Logger.add_to_log("info", "Conexión a MongoDB establecida")
         return _db
