@@ -86,13 +86,13 @@ async def lifespan(app: FastAPI):
     # TTL: borra ubicaciones de cuidadores si no se actualizan en 15 min
     await db["UbicacionesCuidadores"].create_index("timestamp", expireAfterSeconds=900)
     # Índices de consulta frecuente
-    await db["Cuidadores"].create_index("email", unique=True, background=True)
-    await db["Familiares"].create_index("email", unique=True, background=True)
-    await db["Dispositivos"].create_index("id_dispositivo", unique=True, background=True)
-    await db["Pacientes"].create_index("id_cuidador", background=True)
-    await db["Historial"].create_index([("paciente_id", 1), ("timestamp", -1)], background=True)
-    await db["Alertas"].create_index([("paciente_id", 1), ("estado", 1)], background=True)
-    await db["ZonasSeguras"].create_index("paciente_id", background=True)
+    await db["Cuidadores"].create_index("email", unique=True)
+    await db["Familiares"].create_index("email", unique=True)
+    await db["Dispositivos"].create_index("id_dispositivo", unique=True)
+    await db["Pacientes"].create_index("id_cuidador")
+    await db["Historial"].create_index([("paciente_id", 1), ("timestamp", -1)])
+    await db["Alertas"].create_index([("paciente_id", 1), ("estado", 1)])
+    await db["ZonasSeguras"].create_index("paciente_id")
 
     alertas_task  = asyncio.create_task(tarea_alertas())
     mqtt_task     = asyncio.create_task(mqtt_subscriber_task())
