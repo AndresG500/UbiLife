@@ -17,13 +17,7 @@ def get_database():
     
     try:
         uri = os.getenv("MONGO_URI")
-        _client = AsyncIOMotorClient(
-            uri,
-            tls=True,
-            tlsAllowInvalidCertificates=True,
-            tlsAllowInvalidHostnames=True,
-            serverSelectionTimeoutMS=5000,
-        )
+        _client = AsyncIOMotorClient(uri)
         _db = _client["UbiLife"]
         Logger.add_to_log("info", "Conexión a MongoDB establecida")
         return _db
