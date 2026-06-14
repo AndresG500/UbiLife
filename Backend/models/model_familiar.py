@@ -14,6 +14,10 @@ class VerificarFamiliar(BaseModel):
     email: EmailStr = Field(..., max_length=254)
     password: str = Field(...)
 
+class ActualizarFamiliar(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
+
 class RespuestaFamiliar(BaseModel):
     id: str = Field(...)
     name: str = Field(...)

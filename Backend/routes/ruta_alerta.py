@@ -1,7 +1,7 @@
 from typing import Optional, Annotated
 from fastapi import APIRouter, HTTPException, Depends, status, Path
-from services.service_alerta import listar_alertas, listar_alertas_familiar, obtener_alerta, actualizar_estado
-from models.model_alertas import RespuestaAlerta
+from services.service_alerta import listar_alertas, listar_alertas_familiar, obtener_alerta, actualizar_estado, responder_alerta_velocidad
+from models.model_alertas import RespuestaAlerta, RespuestaVelocidad
 from security.dependencies import get_cuidador_actual, get_familiar_actual
 
 MongoId = Annotated[str, Path(pattern=r'^[a-f\d]{24}$')]
@@ -56,4 +56,16 @@ async def resolver_alerta(
     alerta = await actualizar_estado(alerta_id, "resuelta", str(cuidador_actual["_id"]))
     if not alerta:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alerta no encontrada")
+    return _serializar(alerta)
+
+
+@router.patch("/{alerta_id}/responder", response_model=RespuestaAlerta)
+async def responder_velocidad(
+    alerta_id: MongoId,
+    datos: RespuestaVelocidad,
+    cuidador_actual: dict = Depends(get_cuidador_actual),
+):
+    alerta = await responder_alerta_velocidad(alerta_id, str(cuidador_actual["_id"]), datos.viajando)
+    if not alerta:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alerta no encontrada o tipo incorrecto")
     return _serializar(alerta)

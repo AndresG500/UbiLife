@@ -27,3 +27,7 @@ class RespuestaAlerta(BaseModel):
 
 class AtenderAlerta(BaseModel):
     cuidador_id: str = Field(..., description="Cuidador que marca voy en camino")
+
+
+class RespuestaVelocidad(BaseModel):
+    viajando: bool = Field(..., description="True si el paciente viaja con el cuidador, False si es posible robo")

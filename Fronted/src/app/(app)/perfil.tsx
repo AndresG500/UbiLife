@@ -35,7 +35,7 @@ export default function PerfilScreen() {
     setError('')
     try {
       if (tipoUsuario === 'familiar') {
-        // familiares no tienen endpoint de actualizar en el API actual
+        await familiarService.actualizar({ name: nombre.trim(), phone: telefono.trim() || undefined })
       } else {
         await cuidadorService.actualizar({ name: nombre.trim(), phone: telefono.trim() || undefined })
       }
@@ -131,7 +131,7 @@ export default function PerfilScreen() {
                 onChangeText={setNombre}
                 autoCapitalize="words"
                 placeholderTextColor={Colors.textSecondary}
-                editable={tipoUsuario !== 'familiar'}
+                editable
               />
             </View>
           </View>
@@ -143,32 +143,31 @@ export default function PerfilScreen() {
               <TextInput
                 style={styles.input}
                 value={telefono}
-                onChangeText={setTelefono}
+                onChangeText={(t) => setTelefono(t.replace(/\D/g, '').slice(0, 10))}
                 keyboardType="phone-pad"
+                maxLength={10}
                 placeholder="Ej: 3001234567"
                 placeholderTextColor={Colors.textSecondary}
-                editable={tipoUsuario !== 'familiar'}
+                editable
               />
             </View>
           </View>
 
-          {tipoUsuario !== 'familiar' && (
-            <TouchableOpacity
-              style={[styles.saveBtn, loading && { opacity: 0.65 }]}
-              onPress={handleGuardar}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              {loading
-                ? <ActivityIndicator color={Colors.white} size="small" />
-                : (
-                  <>
-                    <Ionicons name="save-outline" size={18} color={Colors.white} style={{ marginRight: 8 }} />
-                    <Text style={styles.saveBtnText}>Guardar cambios</Text>
-                  </>
-                )}
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[styles.saveBtn, loading && { opacity: 0.65 }]}
+            onPress={handleGuardar}
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            {loading
+              ? <ActivityIndicator color={Colors.white} size="small" />
+              : (
+                <>
+                  <Ionicons name="save-outline" size={18} color={Colors.white} style={{ marginRight: 8 }} />
+                  <Text style={styles.saveBtnText}>Guardar cambios</Text>
+                </>
+              )}
+          </TouchableOpacity>
         </View>
 
         {/* Card: información de cuenta (solo lectura) */}

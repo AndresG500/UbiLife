@@ -83,8 +83,9 @@ async def lifespan(app: FastAPI):
     db = get_database()
     # TTL: borra tokens revocados automáticamente cuando expira el JWT
     await db["TokensRevocados"].create_index("exp", expireAfterSeconds=0)
-    # TTL: borra ubicaciones de cuidadores si no se actualizan en 15 min
+    # TTL: borra ubicaciones de cuidadores/familiares si no se actualizan en 15 min
     await db["UbicacionesCuidadores"].create_index("timestamp", expireAfterSeconds=900)
+    await db["UbicacionesFamiliares"].create_index("timestamp", expireAfterSeconds=900)
     # Índices de consulta frecuente
     await db["Cuidadores"].create_index("email", unique=True)
     await db["Familiares"].create_index("email", unique=True)

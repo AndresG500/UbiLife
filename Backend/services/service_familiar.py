@@ -101,6 +101,25 @@ async def verificar_familiar(email: str, password: str):
         return {"mensaje": "Credenciales inválidas"}
 
 
+async def actualizar_familiar(familiar_id: str, datos: dict):
+    try:
+        db        = get_database()
+        cambios   = {k: v for k, v in datos.items() if v is not None}
+        if not cambios:
+            return {"error": "No se enviaron cambios"}
+        resultado = await db["Familiares"].update_one(
+            {"_id": ObjectId(familiar_id)},
+            {"$set": cambios},
+        )
+        if resultado.matched_count == 0:
+            return {"error": "Familiar no encontrado"}
+        Logger.add_to_log("info", f"Familiar actualizado: {familiar_id}")
+        return {"mensaje": "Perfil actualizado correctamente"}
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al actualizar familiar: {ex}")
+        return {"error": f"No se pudo actualizar: {ex}"}
+
+
 async def actualizar_fcm_familiar(email: str, fcm_token: str):
     try:
         coleccion = get_database()["Familiares"]

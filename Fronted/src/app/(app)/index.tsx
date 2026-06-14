@@ -17,6 +17,7 @@ import {
   type UbicacionCuidador, type UbicacionFamiliar,
 } from '@/services/ubicacion'
 import AnimatedScreen from '@/components/AnimatedScreen'
+import { eventosMapa } from '@/utils/eventosMapa'
 
 function escaparJs(s: string): string {
   return s
@@ -30,7 +31,7 @@ function escaparJs(s: string): string {
     .replace(/\r/g, '\\r')
 }
 
-function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuidador[] = [], familiares: UbicacionFamiliar[] = []): string {
+function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuidador[] = [], familiares: UbicacionFamiliar[] = [], fallbackLat = 11.2404, fallbackLng = -74.211): string {
   const zonesJs = zonas.map((zona) => {
     const lat   = zona.centro?.latitud  ?? 0
     const lng   = zona.centro?.longitud ?? 0
@@ -108,7 +109,7 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
   <div id="map"></div>
   <script>
     var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([11.2404, -74.2110], 14);
-    L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       subdomains: 'abc',
     }).addTo(map);
@@ -155,7 +156,7 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
     ${cuidadorMarkersJs}
     ${familiarMarkersJs}
 
-    // Auto-zoom al cargar para mostrar todos los marcadores
+    // Auto-zoom al cargar para mostrar todos los marcadores; si no hay ninguno, centra en el usuario
     setTimeout(function() { fitAll(); }, 200);
 
     function updateMarker(id, lat, lng) {
@@ -200,7 +201,7 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
       Object.values(markers).forEach(function(m) { positions.push(m.getLatLng()); });
       Object.values(cuidadorMarkers).forEach(function(m) { positions.push(m.getLatLng()); });
       Object.values(familiarMarkers).forEach(function(m) { positions.push(m.getLatLng()); });
-      if (positions.length === 0) return;
+      if (positions.length === 0) { map.setView([${fallbackLat}, ${fallbackLng}], 15); return; }
       if (positions.length === 1) { map.setView(positions[0], 16); return; }
       map.fitBounds(L.latLngBounds(positions), { padding: [70, 70], maxZoom: 17 });
     }
@@ -232,6 +233,33 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
     function hideSignalLostCircle() {
       if (signalLostCircle) { signalLostCircle.remove(); signalLostCircle = null; }
     }
+
+    var _routeLayer = null;
+    var _userMarker = null;
+
+    async function showRoute(fromLat, fromLng, toLat, toLng) {
+      clearRoute();
+      _userMarker = L.circleMarker([fromLat, fromLng], {
+        radius: 10, fillColor: '#3b82f6', fillOpacity: 1, color: 'white', weight: 3,
+      }).addTo(map).bindPopup('Mi ubicación');
+      try {
+        var url = 'https://router.project-osrm.org/route/v1/driving/' + fromLng + ',' + fromLat + ';' + toLng + ',' + toLat + '?overview=full&geometries=geojson';
+        var resp = await fetch(url);
+        var data = await resp.json();
+        if (data.routes && data.routes.length > 0) {
+          _routeLayer = L.geoJSON(data.routes[0].geometry, {
+            style: { color: '#102e50', weight: 5, opacity: 0.8 }
+          }).addTo(map);
+        }
+      } catch(e) {}
+      var bounds = L.latLngBounds([[fromLat, fromLng], [toLat, toLng]]);
+      map.fitBounds(bounds, { padding: [60, 60] });
+    }
+
+    function clearRoute() {
+      if (_routeLayer) { _routeLayer.remove(); _routeLayer = null; }
+      if (_userMarker) { _userMarker.remove(); _userMarker = null; }
+    }
   </script>
 </body>
 </html>`
@@ -254,6 +282,7 @@ export default function MapScreen() {
   const gruposFamiliarRef = useRef<any[]>([])
   const zonasRef          = useRef<any[]>([])
   const mapaListo         = useRef(false)
+  const [rutaVisible, setRutaVisible] = useState(false)
 
   const { ubicacion, gpsActivo } = useSSEUbicacion(selPacId)
 
@@ -340,7 +369,23 @@ export default function MapScreen() {
       setOnline(true)
 
       if (!mapaListo.current) {
-        setMapHtml(buildMapHTML(pacs, todasZonas, todasUbicaciones, todasFamiliares))
+        // Obtener ubicación del usuario como fallback si no hay marcadores de pacientes
+        let fallbackLat = 11.2404
+        let fallbackLng = -74.211
+        const hayMarcadores = pacs.some((p: any) => p.ultima_ubicacion) || todasUbicaciones.length > 0 || todasFamiliares.length > 0
+        if (!hayMarcadores) {
+          try {
+            const { status } = await Location.requestForegroundPermissionsAsync()
+            if (status === 'granted') {
+              const pos = await Location.getLastKnownPositionAsync()
+              if (pos) {
+                fallbackLat = pos.coords.latitude
+                fallbackLng = pos.coords.longitude
+              }
+            }
+          } catch {}
+        }
+        setMapHtml(buildMapHTML(pacs, todasZonas, todasUbicaciones, todasFamiliares, fallbackLat, fallbackLng))
         mapaListo.current = true
       } else {
         for (const z of todasZonas) {
@@ -469,6 +514,14 @@ export default function MapScreen() {
     }, [cargarDatos])
   )
 
+  useEffect(() => {
+    eventosMapa.onMostrarRuta((fromLat, fromLng, toLat, toLng) => {
+      webViewRef.current?.injectJavaScript(`showRoute(${fromLat}, ${fromLng}, ${toLat}, ${toLng}); true;`)
+      setRutaVisible(true)
+    })
+    return () => eventosMapa.limpiarHandler()
+  }, [])
+
   const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data)
@@ -531,7 +584,7 @@ export default function MapScreen() {
 
       <TouchableOpacity
         style={styles.bellBtn}
-        onPress={() => router.push('/(app)/alertas')}
+        onPress={() => router.push('/(app)/alertas' as any)}
         activeOpacity={0.85}
       >
         <Ionicons name="notifications" size={22} color={'#102e50'} />
@@ -567,6 +620,20 @@ export default function MapScreen() {
         estadoActivo={estadoViaje}
         onCambio={cargarDatos}
       />
+
+      {rutaVisible && (
+        <TouchableOpacity
+          style={styles.clearRouteBtn}
+          onPress={() => {
+            webViewRef.current?.injectJavaScript('clearRoute(); true;')
+            setRutaVisible(false)
+          }}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="close-circle" size={18} color={Colors.white} />
+          <Text style={styles.clearRouteBtnText}>Cerrar ruta</Text>
+        </TouchableOpacity>
+      )}
     </View>
     </AnimatedScreen>
   )
@@ -576,7 +643,7 @@ const styles = StyleSheet.create({
   container:    { flex: 1 },
   map:          { flex: 1 },
   loadingOverlay: {
-    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.background,
   },
@@ -641,5 +708,28 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 8, right: 8,
     width: 8, height: 8, borderRadius: 4,
     backgroundColor: '#16a34a',
+  },
+
+  clearRouteBtn: {
+    position: 'absolute',
+    bottom: 32,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#102e50',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+  },
+  clearRouteBtnText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '700',
   },
 })

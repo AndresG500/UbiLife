@@ -1,42 +1,51 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, ActivityIndicator, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import LottieView from 'lottie-react-native'
 import { Colors } from '@/constants/Colors'
 import { dispositivoService, pacienteService } from '@/services/api'
 import { mensajeDeError } from '@/utils/errores'
 import AnimatedScreen from '@/components/AnimatedScreen'
 
 export default function VincularDispositivoScreen() {
-  const router = useRouter()
-  const [cargando,     setCargando]     = useState(true)
+  const router   = useRouter()
+  const animRef  = useRef<LottieView>(null)
+  const [buscando,     setBuscando]     = useState(true)
   const [dispositivos, setDispositivos] = useState<any[]>([])
   const [pacientes,    setPacientes]    = useState<any[]>([])
   const [pacSelId,     setPacSelId]     = useState<string>('')
   const [vinculando,   setVinculando]   = useState<string | null>(null)
   const [vinculado,    setVinculado]    = useState(false)
 
-  const cargarDatos = async () => {
-    setCargando(true)
+  const iniciarBusqueda = async () => {
+    setBuscando(true)
+    setDispositivos([])
+    animRef.current?.play()
     try {
-      const [resDev, resPac] = await Promise.all([
+      const [resDev] = await Promise.all([
         dispositivoService.disponibles(),
-        pacienteService.listar(),
+        new Promise(resolve => setTimeout(resolve, 5000)),
       ])
-      const devs = Array.isArray(resDev.data) ? resDev.data : []
-      const pacs = Array.isArray(resPac.data) ? resPac.data : []
-      setDispositivos(devs)
-      setPacientes(pacs)
-      if (pacs.length > 0) setPacSelId(pacs[0].id_paciente ?? pacs[0].id)
+      setDispositivos(Array.isArray(resDev.data) ? resDev.data : [])
     } catch {
       Alert.alert('Error', 'No se pudo conectar al servidor.')
+      setDispositivos([])
     } finally {
-      setCargando(false)
+      animRef.current?.pause()
+      setBuscando(false)
     }
   }
 
-  useEffect(() => { cargarDatos() }, [])
+  useEffect(() => {
+    pacienteService.listar().then(res => {
+      const pacs = Array.isArray(res.data) ? res.data : []
+      setPacientes(pacs)
+      if (pacs.length > 0) setPacSelId(pacs[0].id_paciente ?? pacs[0].id)
+    }).catch(() => {})
+    iniciarBusqueda()
+  }, [])
 
   const handleVincular = async (id_dispositivo: string) => {
     if (!pacSelId) {
@@ -111,9 +120,15 @@ export default function VincularDispositivoScreen() {
           </View>
         )}
 
-        {cargando ? (
+        {buscando ? (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color={Colors.primary} />
+            <LottieView
+              ref={animRef}
+              source={require('../../animations/planet.json')}
+              autoPlay={false}
+              loop
+              style={styles.lottie}
+            />
             <Text style={styles.buscandoText}>Buscando dispositivos...</Text>
             <Text style={styles.buscandoSub}>Asegúrate de que el ESP32 esté encendido y cerca.</Text>
           </View>
@@ -121,7 +136,7 @@ export default function VincularDispositivoScreen() {
           <View style={styles.center}>
             <Ionicons name="wifi-outline" size={64} color={Colors.primaryLight} />
             <Text style={styles.buscandoText}>No se encontraron dispositivos</Text>
-            <TouchableOpacity style={styles.btn} onPress={cargarDatos} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.btn} onPress={iniciarBusqueda} activeOpacity={0.85}>
               <Text style={styles.btnText}>Buscar de nuevo</Text>
             </TouchableOpacity>
           </View>
@@ -183,6 +198,7 @@ const styles = StyleSheet.create({
   pacChipActivo: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
   pacChipText:       { fontSize: 13, color: Colors.textSecondary },
   pacChipTextActivo: { color: Colors.primary, fontWeight: '700' },
+  lottie:       { width: 200, height: 200 },
   buscandoText: { fontSize: 18, fontWeight: '700', color: Colors.text, textAlign: 'center' },
   buscandoSub:  { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
   listTitle:    { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 8 },

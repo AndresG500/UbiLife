@@ -65,6 +65,9 @@ export const familiarService = {
 
   misPacientes: () => api.get('/familiares/pacientes'),
 
+  actualizar: (datos: { name?: string; phone?: string }) =>
+    api.put('/familiares/actualizar', datos),
+
   logout: () => api.post('/familiares/logout').catch(() => {}),
 
   actualizarFcmToken: (token: string) =>
@@ -139,6 +142,9 @@ export const alertaService = {
   resolver: (id: string) => api.patch(`/alertas/${id}/resolver`),
 
   listarFamiliar: () => api.get('/alertas/familiar/'),
+
+  responder: (id: string, viajando: boolean) =>
+    api.patch(`/alertas/${id}/responder`, { viajando }),
 }
 
 // ── Dispositivos ───────────────────────────────────────────────────────────

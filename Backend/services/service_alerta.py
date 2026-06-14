@@ -9,7 +9,7 @@ from utils.Logger import Logger
 
 COOLDOWN_ALERTA_SEGUNDOS    = 300   # 5 minutos entre alertas de zona
 COOLDOWN_VELOCIDAD_SEGUNDOS = 120   # 2 minutos entre notificaciones de anomalía
-VELOCIDAD_ANOMALIA_KMH      = 50.0  # umbral km/h
+VELOCIDAD_ANOMALIA_KMH      = 40.0  # umbral km/h
 
 UMBRAL_SENAL_PERDIDA_S   = 60    # segundos sin datos → GPS offline
 VENTANA_DISPOSITIVO_S    = 300   # dispositivo debe haber tenido señal en los últimos 5 min
@@ -383,8 +383,19 @@ async def crear_y_despachar_alerta(
             tokens.append(token)
             cuidador_ids_con_token.append(to_str_id(c["_id"]))
 
+    # También notificar a familiares del grupo
+    familiar_ids_unicos = list({fid for g in grupos for fid in g.get("familiar_ids", [])})
+    if familiar_ids_unicos:
+        familiares = await db["Familiares"].find(
+            {"_id": {"$in": [ObjectId(fid) for fid in familiar_ids_unicos if isinstance(fid, str) and len(fid) == 24]}}
+        ).to_list(length=None)
+        for f in familiares:
+            token = f.get("fcm_token")
+            if token:
+                tokens.append(token)
+
     if not tokens:
-        Logger.add_to_log("warn", f"Ningún cuidador del paciente {paciente_id_str} tiene fcm_token registrado")
+        Logger.add_to_log("warn", f"Ningún cuidador ni familiar del paciente {paciente_id_str} tiene fcm_token registrado")
         await coleccion_alertas.update_one(
             {"_id": alerta_id}, {"$set": {"estado": "fallida"}}
         )
@@ -414,10 +425,14 @@ async def crear_y_despachar_alerta(
         }},
     )
 
-    Logger.add_to_log("info", f"Alerta {alerta_id} | tipo={tipo} | paciente={paciente_id_str} | cuidadores={len(tokens)} | FCM exitos={resultado['exitos']} fallos={resultado['fallos']}")
+    Logger.add_to_log("info", f"Alerta {alerta_id} | tipo={tipo} | paciente={paciente_id_str} | destinatarios={len(tokens)} | FCM exitos={resultado['exitos']} fallos={resultado['fallos']}")
 
     if resultado["tokens_invalidos"]:
         await coleccion_cuidadores.update_many(
+            {"fcm_token": {"$in": resultado["tokens_invalidos"]}},
+            {"$unset": {"fcm_token": ""}},
+        )
+        await db["Familiares"].update_many(
             {"fcm_token": {"$in": resultado["tokens_invalidos"]}},
             {"$unset": {"fcm_token": ""}},
         )
@@ -485,6 +500,39 @@ async def actualizar_estado(alerta_id: str, nuevo_estado: str, cuidador_id: str)
         {"_id": ObjectId(alerta_id)},
         {"$set": {"estado": nuevo_estado}},
     )
+    return await obtener_alerta(alerta_id, cuidador_id)
+
+
+async def responder_alerta_velocidad(alerta_id: str, cuidador_id: str, viajando: bool) -> Optional[dict]:
+    alerta = await obtener_alerta(alerta_id, cuidador_id)
+    if not alerta:
+        return None
+    if alerta.get("tipo") != "anomalia_velocidad":
+        return None
+
+    db = get_database()
+    paciente_id = str(alerta["paciente_id"])
+
+    if viajando:
+        from services.service_modo_viaje import activar_modo_viaje
+        await activar_modo_viaje(
+            paciente_id=paciente_id,
+            tipo="vehiculo",
+            duracion_horas=None,
+            activado_por=cuidador_id,
+        )
+        await db["Alertas"].update_one(
+            {"_id": ObjectId(alerta_id)},
+            {"$set": {"estado": "resuelta"}},
+        )
+        Logger.add_to_log("info", f"Alerta velocidad resuelta (viajando) | alerta={alerta_id} | modo viaje activado | paciente={paciente_id}")
+    else:
+        await db["Alertas"].update_one(
+            {"_id": ObjectId(alerta_id)},
+            {"$set": {"tipo": "posible_robo"}},
+        )
+        Logger.add_to_log("warning", f"Posible robo reportado | alerta={alerta_id} | paciente={paciente_id}")
+
     return await obtener_alerta(alerta_id, cuidador_id)
 
 
@@ -559,6 +607,15 @@ async def reenviar_alertas_activas() -> dict:
             ).to_list(length=None)
 
             tokens = [c.get("fcm_token") for c in cuidadores if c.get("fcm_token")]
+
+            # También notificar a familiares del grupo
+            familiar_ids_reenvio = list({fid for g in grupos for fid in g.get("familiar_ids", [])})
+            if familiar_ids_reenvio:
+                familiares_reenvio = await db["Familiares"].find(
+                    {"_id": {"$in": [ObjectId(fid) for fid in familiar_ids_reenvio if isinstance(fid, str) and len(fid) == 24]}}
+                ).to_list(length=None)
+                tokens.extend([f.get("fcm_token") for f in familiares_reenvio if f.get("fcm_token")])
+
             if not tokens:
                 continue
 
@@ -684,6 +741,14 @@ async def _crear_alerta_senal_perdida(db, paciente: dict, lat: float, lng: float
     tokens                 = [c.get("fcm_token") for c in cuidadores if c.get("fcm_token")]
     cuidador_ids_con_token = [to_str_id(c["_id"]) for c in cuidadores if c.get("fcm_token")]
 
+    # También notificar a familiares del grupo
+    familiar_ids_senal = list({fid for g in grupos for fid in g.get("familiar_ids", [])})
+    if familiar_ids_senal:
+        familiares_senal = await db["Familiares"].find(
+            {"_id": {"$in": [ObjectId(fid) for fid in familiar_ids_senal if isinstance(fid, str) and len(fid) == 24]}}
+        ).to_list(length=None)
+        tokens.extend([f.get("fcm_token") for f in familiares_senal if f.get("fcm_token")])
+
     if not tokens:
         await db["Alertas"].update_one({"_id": alerta_id}, {"$set": {"estado": "fallida"}})
         Logger.add_to_log("warn", f"Sin tokens FCM para alerta señal perdida | paciente={paciente_id_str}")
@@ -715,6 +780,10 @@ async def _crear_alerta_senal_perdida(db, paciente: dict, lat: float, lng: float
     Logger.add_to_log("info", f"Alerta señal perdida | paciente={paciente_id_str} | FCM exitos={resultado['exitos']} fallos={resultado['fallos']}")
     if resultado["tokens_invalidos"]:
         await db["Cuidadores"].update_many(
+            {"fcm_token": {"$in": resultado["tokens_invalidos"]}},
+            {"$unset": {"fcm_token": ""}},
+        )
+        await db["Familiares"].update_many(
             {"fcm_token": {"$in": resultado["tokens_invalidos"]}},
             {"$unset": {"fcm_token": ""}},
         )

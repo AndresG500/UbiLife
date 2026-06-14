@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator,
   KeyboardAvoidingView, Platform, ScrollView,
-  ImageBackground,
+  ImageBackground, Image,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -92,8 +92,12 @@ export default function LoginScreen() {
           >
             {/* Logo y nombre */}
             <View style={styles.header}>
-              <View style={styles.logoWrap}>
-                <Ionicons name="location" size={42} color={Colors.white} />
+              <View>
+                <Image
+                  source={require('@/assets/images/Logo.png')}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
               </View>
               <Text style={styles.appName}>UbiLife</Text>
               <Text style={styles.tagline}>Rastreo GPS para cuidadores</Text>
@@ -202,6 +206,7 @@ const styles = StyleSheet.create({
     marginBottom: 16, borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.35)',
   },
+  logoImage: { width: 250, height: 150 },
   appName: { fontSize: 38, fontWeight: '800', color: Colors.white, letterSpacing: 1.5 },
   tagline: { fontSize: 14, color: 'rgba(255,255,255,0.72)', marginTop: 6, letterSpacing: 0.3 },
 

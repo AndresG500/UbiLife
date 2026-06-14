@@ -180,8 +180,9 @@ export default function RegisterCuidadorScreen() {
                   placeholder="+573001234567"
                   placeholderTextColor={Colors.textSecondary}
                   value={phone}
-                  onChangeText={setPhone}
+                  onChangeText={(t) => setPhone(t.replace(/\D/g, '').slice(0, 10))}
                   keyboardType="phone-pad"
+                  maxLength={10}
                   autoComplete="tel"
                 />
               </View>

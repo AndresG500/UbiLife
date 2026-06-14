@@ -39,7 +39,7 @@ const ZONA_MAP_HTML = `<!DOCTYPE html>
   <div id="map"></div>
   <script>
     var map = L.map('map', { zoomControl: false }).setView([11.2404, -74.2110], 14);
-    L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_API_KEY}', {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       subdomains: 'abc',
     }).addTo(map);

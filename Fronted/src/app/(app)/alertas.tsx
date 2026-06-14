@@ -34,6 +34,12 @@ const TIPO_CONFIG: Record<string, { label: string; icon: IoniconsName; color: st
     color: '#d97706',
     bg:    '#fffbeb',
   },
+  posible_robo: {
+    label: 'Posible robo del dispositivo',
+    icon:  'warning-outline',
+    color: '#7c3aed',
+    bg:    '#f5f3ff',
+  },
   senal_perdida: {
     label: 'Señal GPS perdida',
     icon:  'wifi-outline',

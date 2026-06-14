@@ -78,9 +78,15 @@ export async function registrarToken(): Promise<void> {
   }
 }
 
+export type DatosVelocidad = { alertaId: string; pacienteId: string }
+
+const TIPOS_CON_RUTA = ['salida_zona_segura', 'alerta_periodica', 'senal_perdida']
+
 export function configurarListeners(
   onRecibida: (titulo: string, cuerpo: string) => void,
   onTap: () => void,
+  onAnomaliaVelocidad?: (datos: DatosVelocidad) => void,
+  onAlertaConUbicacion?: (tipo: string, lat: number, lng: number) => void,
 ): () => void {
   if (!Notifications) {
     console.log('[Notificaciones] Listeners omitidos en Expo Go');
@@ -92,27 +98,67 @@ export function configurarListeners(
 
   subs.push(
     Notifications.addNotificationReceivedListener((notif) => {
+      const data = notif.request.content.data as Record<string, unknown> | undefined
+      if (data?.tipo === 'anomalia_velocidad' && data?.alerta_id && onAnomaliaVelocidad) {
+        onAnomaliaVelocidad({ alertaId: String(data.alerta_id), pacienteId: String(data.paciente_id ?? '') })
+        return
+      }
       const titulo = notif.request.content.title ?? 'Alerta UbiLife';
       const cuerpo = notif.request.content.body  ?? '';
       onRecibida(titulo, cuerpo);
+      const tipo = String(data?.tipo ?? '')
+      const lat  = parseFloat(String(data?.lat ?? ''))
+      const lng  = parseFloat(String(data?.lng ?? ''))
+      if (TIPOS_CON_RUTA.includes(tipo) && !Number.isNaN(lat) && !Number.isNaN(lng) && onAlertaConUbicacion) {
+        onAlertaConUbicacion(tipo, lat, lng)
+      }
     })
   );
 
   subs.push(
-    Notifications.addNotificationResponseReceivedListener(() => {
+    Notifications.addNotificationResponseReceivedListener((resp) => {
+      const data = resp.notification.request.content.data as Record<string, unknown> | undefined
+      if (data?.tipo === 'anomalia_velocidad' && data?.alerta_id && onAnomaliaVelocidad) {
+        onAnomaliaVelocidad({ alertaId: String(data.alerta_id), pacienteId: String(data.paciente_id ?? '') })
+        return
+      }
       onTap();
+      const tipo = String(data?.tipo ?? '')
+      const lat  = parseFloat(String(data?.lat ?? ''))
+      const lng  = parseFloat(String(data?.lng ?? ''))
+      if (TIPOS_CON_RUTA.includes(tipo) && !Number.isNaN(lat) && !Number.isNaN(lng) && onAlertaConUbicacion) {
+        onAlertaConUbicacion(tipo, lat, lng)
+      }
     })
   );
 
   return () => subs.forEach((s) => s.remove());
 }
 
-export async function verificarNotifInicial(): Promise<boolean> {
-  if (!Notifications) return false;
+export type NotifInicialResult =
+  | { esVelocidad: true;  alertaId: string; pacienteId: string }
+  | { esVelocidad: false; tipo: string | null; lat: number | null; lng: number | null }
+  | null
+
+export async function verificarNotifInicial(): Promise<NotifInicialResult> {
+  if (!Notifications) return null;
   try {
     const resp = await Notifications.getLastNotificationResponseAsync();
-    return !!resp;
+    if (!resp) return null;
+    const data = resp.notification.request.content.data as Record<string, unknown> | undefined
+    if (data?.tipo === 'anomalia_velocidad' && data?.alerta_id) {
+      return { esVelocidad: true, alertaId: String(data.alerta_id), pacienteId: String(data.paciente_id ?? '') }
+    }
+    const tipo = data?.tipo ? String(data.tipo) : null
+    const lat  = data?.lat  ? parseFloat(String(data.lat))  : null
+    const lng  = data?.lng  ? parseFloat(String(data.lng))  : null
+    return {
+      esVelocidad: false,
+      tipo,
+      lat: lat !== null && Number.isNaN(lat) ? null : lat,
+      lng: lng !== null && Number.isNaN(lng) ? null : lng,
+    }
   } catch {
-    return false;
+    return null;
   }
 }

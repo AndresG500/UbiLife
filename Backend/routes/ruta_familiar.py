@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from models.model_familiar import CrearFamiliar, VerificarFamiliar
+from models.model_familiar import CrearFamiliar, VerificarFamiliar, ActualizarFamiliar
 from services.service_familiar import (
     registrar_familiar, verificar_familiar,
     listar_grupos_familiar, listar_pacientes_familiar,
-    actualizar_fcm_familiar,
+    actualizar_fcm_familiar, actualizar_familiar,
 )
 from pydantic import BaseModel, Field
 
@@ -52,6 +52,18 @@ async def mis_grupos(familiar_actual=Depends(get_familiar_actual)):
     resultado   = await listar_grupos_familiar(familiar_id)
     if isinstance(resultado, dict) and "error" in resultado:
         raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado
+
+
+@router.put("/actualizar")
+async def actualizar_perfil_familiar(
+    datos: ActualizarFamiliar,
+    familiar_actual = Depends(get_familiar_actual),
+):
+    familiar_id = str(familiar_actual["_id"])
+    resultado   = await actualizar_familiar(familiar_id, datos.model_dump(exclude_none=True))
+    if "error" in resultado:
+        raise HTTPException(status_code=400, detail=resultado["error"])
     return resultado
 
 

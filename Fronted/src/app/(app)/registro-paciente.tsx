@@ -1,11 +1,81 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ScrollView,
+  ActivityIndicator, ScrollView, FlatList,
 } from 'react-native'
+
+const ENFERMEDADES = [
+  'Alzheimer leve',
+  'Alzheimer moderado',
+  'Alzheimer severo',
+  'Alzheimer precoz',
+  'Demencia vascular',
+  'Demencia por cuerpos de Lewy',
+  'Demencia frontotemporal',
+  'Demencia mixta',
+  'Deterioro cognitivo leve',
+  'Enfermedad de Parkinson con demencia',
+  'Afasia progresiva primaria',
+  'Demencia por Huntington',
+]
+
+const EPS_LIST = [
+  'Nueva EPS',
+  'Sura',
+  'Sanitas',
+  'Compensar',
+  'Coomeva',
+  'Cafam',
+  'Famisanar',
+  'Salud Total',
+  'Coosalud',
+  'Mutual Ser',
+  'Comfenalco',
+  'Aliansalud',
+  'Medimás',
+  'Cruz Blanca',
+  'Colsanitas',
+  'Emssanar',
+  'Convida',
+  'Comfama',
+  'ASMET Salud',
+  'Comfacor',
+  'Pijaos Salud',
+]
+
+function tieneLetras(s: string): boolean {
+  return /[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]{2,}/.test(s)
+}
+
+function Sugerencias({ opciones, valor, onSelect }: {
+  opciones: string[]
+  valor: string
+  onSelect: (v: string) => void
+}) {
+  const filtradas = valor.trim().length === 0
+    ? opciones
+    : opciones.filter(o => o.toLowerCase().includes(valor.toLowerCase()) && o.toLowerCase() !== valor.toLowerCase())
+  if (filtradas.length === 0) return null
+  return (
+    <FlatList
+      horizontal
+      data={filtradas}
+      keyExtractor={(item) => item}
+      showsHorizontalScrollIndicator={false}
+      style={styles.pillsRow}
+      contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+      renderItem={({ item }) => (
+        <TouchableOpacity style={styles.pill} onPress={() => onSelect(item)} activeOpacity={0.75}>
+          <Text style={styles.pillText}>{item}</Text>
+        </TouchableOpacity>
+      )}
+    />
+  )
+}
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import LottieView from 'lottie-react-native'
 import { Colors } from '@/constants/Colors'
 import { pacienteService, dispositivoService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
@@ -17,6 +87,7 @@ type Dispositivo = { id_dispositivo: string; dispositivo_detectado: string }
 export default function RegistroPacienteScreen() {
   const router = useRouter()
   const { cuidador } = useAuth()
+  const animRef = useRef<LottieView>(null)
 
   const [nombre_paciente,   setNombrePaciente]   = useState('')
   const [edad_paciente,     setEdadPaciente]      = useState('')
@@ -28,29 +99,40 @@ export default function RegistroPacienteScreen() {
   const [loading,           setLoading]           = useState(false)
   const [error,             setError]             = useState('')
 
-  // Paso 2 — vincular dispositivo
-  const [paso,                  setPaso]                  = useState<1 | 2>(1)
-  const [pacienteId,            setPacienteId]            = useState('')
-  const [dispositivos,          setDispositivos]          = useState<Dispositivo[]>([])
-  const [cargandoDispositivos,  setCargandoDispositivos]  = useState(false)
+  const [paso,                    setPaso]                    = useState<1 | 'buscando' | 2>(1)
+  const [pacienteId,              setPacienteId]              = useState('')
+  const [dispositivos,            setDispositivos]            = useState<Dispositivo[]>([])
   const [dispositivoSeleccionado, setDispositivoSeleccionado] = useState<string | null>(null)
-  const [vinculando,            setVinculando]            = useState(false)
-  const [errorVinculo,          setErrorVinculo]          = useState('')
+  const [vinculando,              setVinculando]              = useState(false)
+  const [errorVinculo,            setErrorVinculo]            = useState('')
 
   useEffect(() => {
-    if (paso === 2) cargarDispositivos()
+    if (paso === 'buscando') {
+      animRef.current?.play()
+      iniciarBusqueda()
+    }
   }, [paso])
 
-  const cargarDispositivos = async () => {
-    setCargandoDispositivos(true)
+  const iniciarBusqueda = async () => {
     try {
-      const res = await dispositivoService.disponibles()
+      const [res] = await Promise.all([
+        dispositivoService.disponibles(),
+        new Promise(resolve => setTimeout(resolve, 5000)),
+      ])
       setDispositivos(res.data ?? [])
     } catch {
       setDispositivos([])
     } finally {
-      setCargandoDispositivos(false)
+      animRef.current?.pause()
+      setPaso(2)
     }
+  }
+
+  const handleReintentar = () => {
+    setDispositivos([])
+    setDispositivoSeleccionado(null)
+    setErrorVinculo('')
+    setPaso('buscando')
   }
 
   const handleGuardar = async () => {
@@ -63,23 +145,43 @@ export default function RegistroPacienteScreen() {
       setError('Ingresa una edad válida.')
       return
     }
+    if (!cedula.trim() || cedula.trim().length < 6 || cedula.trim().length > 12) {
+      setError('La cédula debe tener entre 6 y 12 dígitos.')
+      return
+    }
+    if (!enfermedad.trim() || !tieneLetras(enfermedad)) {
+      setError('Ingresa un diagnóstico válido (solo texto, sin números ni símbolos).')
+      return
+    }
+    if (!eps.trim() || !tieneLetras(eps)) {
+      setError('Ingresa una EPS válida (solo texto, sin números ni símbolos).')
+      return
+    }
+    if (!familiar_nombre.trim() || !tieneLetras(familiar_nombre)) {
+      setError('Ingresa el nombre del contacto de emergencia (solo texto).')
+      return
+    }
+    if (!familiar_telefono.trim() || familiar_telefono.trim().length < 7) {
+      setError('Ingresa el teléfono del contacto de emergencia (mínimo 7 dígitos).')
+      return
+    }
     setLoading(true)
     setError('')
     try {
       const res = await pacienteService.registrar({
         nombre_paciente:   nombre_paciente.trim(),
         edad_paciente:     edadNum,
-        enfermedad:        enfermedad.trim() || undefined,
-        cedula:            cedula.trim() || undefined,
-        eps:               eps.trim() || undefined,
-        familiar_nombre:   familiar_nombre.trim() || undefined,
-        familiar_telefono: familiar_telefono.trim() || undefined,
+        enfermedad:        enfermedad.trim(),
+        cedula:            cedula.trim(),
+        eps:               eps.trim(),
+        familiar_nombre:   familiar_nombre.trim(),
+        familiar_telefono: familiar_telefono.trim(),
         id_cuidador:       cuidador?.id ?? '',
       } as any)
       const id = res.data?.id_paciente
       if (id) {
         setPacienteId(id)
-        setPaso(2)
+        setPaso('buscando')
       } else {
         router.replace('/(app)/pacientes')
       }
@@ -104,7 +206,10 @@ export default function RegistroPacienteScreen() {
     }
   }
 
-  if (paso === 2) {
+  if (paso === 'buscando' || paso === 2) {
+    const buscando  = paso === 'buscando'
+    const encontro  = dispositivos.length > 0
+
     return (
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
@@ -114,77 +219,93 @@ export default function RegistroPacienteScreen() {
 
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={styles.card}>
-            <Text style={styles.sectionLabel}>Dispositivos disponibles</Text>
-            <Text style={styles.sectionDesc}>
-              Selecciona el GPS que usará este paciente. Puedes omitir este paso y vincularlo después.
-            </Text>
 
-            {errorVinculo ? (
-              <View style={styles.errorBox}>
-                <Ionicons name="warning-outline" size={15} color={Colors.error} style={{ marginRight: 6 }} />
-                <Text style={styles.errorText}>{errorVinculo}</Text>
-              </View>
-            ) : null}
+            <View style={styles.lottieContainer}>
+              <LottieView
+                ref={animRef}
+                source={require('../../../animations/planet.json')}
+                autoPlay={false}
+                loop
+                style={styles.lottie}
+              />
+            </View>
 
-            {cargandoDispositivos ? (
-              <ActivityIndicator color="#102e50" style={{ marginVertical: 24 }} />
-            ) : dispositivos.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Ionicons name="wifi-outline" size={36} color={Colors.textSecondary} />
-                <Text style={styles.emptyText}>No hay dispositivos detectados.{'\n'}Asegúrate de que el GPS esté encendido.</Text>
-                <TouchableOpacity onPress={cargarDispositivos} style={styles.reloadBtn}>
-                  <Ionicons name="refresh-outline" size={16} color="#102e50" />
-                  <Text style={styles.reloadText}>Reintentar</Text>
-                </TouchableOpacity>
-              </View>
+            {buscando ? (
+              <Text style={styles.buscandoTitle}>Buscando dispositivos...</Text>
             ) : (
-              dispositivos.map((d) => {
-                const seleccionado = dispositivoSeleccionado === d.id_dispositivo
-                return (
-                  <TouchableOpacity
-                    key={d.id_dispositivo}
-                    style={[styles.deviceCard, seleccionado && styles.deviceCardSelected]}
-                    onPress={() => setDispositivoSeleccionado(d.id_dispositivo)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[styles.deviceIcon, seleccionado && styles.deviceIconSelected]}>
-                      <Ionicons name="hardware-chip-outline" size={22} color={seleccionado ? Colors.white : '#102e50'} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.deviceId, seleccionado && { color: '#102e50' }]}>{d.id_dispositivo}</Text>
-                      <Text style={styles.deviceFecha}>
-                        Última señal: {new Date(d.dispositivo_detectado).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
-                      </Text>
-                    </View>
-                    {seleccionado && <Ionicons name="checkmark-circle" size={22} color="#102e50" />}
-                  </TouchableOpacity>
-                )
-              })
-            )}
-
-            <TouchableOpacity
-              style={[styles.btn, (!dispositivoSeleccionado || vinculando) && styles.btnDisabled]}
-              onPress={handleVincular}
-              disabled={!dispositivoSeleccionado || vinculando}
-              activeOpacity={0.85}
-            >
-              {vinculando
-                ? <ActivityIndicator color={Colors.white} />
-                : (
+              <>
+                {encontro ? (
                   <>
-                    <Ionicons name="link-outline" size={20} color={Colors.white} style={{ marginRight: 8 }} />
-                    <Text style={styles.btnText}>Vincular y continuar</Text>
+                    <Text style={styles.resultTitle}>Dispositivos encontrados</Text>
+
+                    {errorVinculo ? (
+                      <View style={styles.errorBox}>
+                        <Ionicons name="warning-outline" size={15} color={Colors.error} style={{ marginRight: 6 }} />
+                        <Text style={styles.errorText}>{errorVinculo}</Text>
+                      </View>
+                    ) : null}
+
+                    {dispositivos.map((d) => {
+                      const seleccionado = dispositivoSeleccionado === d.id_dispositivo
+                      return (
+                        <TouchableOpacity
+                          key={d.id_dispositivo}
+                          style={[styles.deviceCard, seleccionado && styles.deviceCardSelected]}
+                          onPress={() => setDispositivoSeleccionado(d.id_dispositivo)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.deviceIcon, seleccionado && styles.deviceIconSelected]}>
+                            <Ionicons name="hardware-chip-outline" size={22} color={seleccionado ? Colors.white : '#102e50'} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.deviceId, seleccionado && { color: '#102e50' }]}>{d.id_dispositivo}</Text>
+                            <Text style={styles.deviceFecha}>
+                              Última señal: {new Date(d.dispositivo_detectado).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
+                            </Text>
+                          </View>
+                          {seleccionado && <Ionicons name="checkmark-circle" size={22} color="#102e50" />}
+                        </TouchableOpacity>
+                      )
+                    })}
+
+                    <TouchableOpacity
+                      style={[styles.btn, (!dispositivoSeleccionado || vinculando) && styles.btnDisabled]}
+                      onPress={handleVincular}
+                      disabled={!dispositivoSeleccionado || vinculando}
+                      activeOpacity={0.85}
+                    >
+                      {vinculando
+                        ? <ActivityIndicator color={Colors.white} />
+                        : (
+                          <>
+                            <Ionicons name="link-outline" size={20} color={Colors.white} style={{ marginRight: 8 }} />
+                            <Text style={styles.btnText}>Vincular y continuar</Text>
+                          </>
+                        )}
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.noEncontradoTitle}>No se encontró ningún dispositivo</Text>
+                    <Text style={styles.noEncontradoDesc}>
+                      Asegúrate de que el GPS esté encendido y dentro del rango. Puedes reintentar la búsqueda o vincularlo después.
+                    </Text>
+                    <TouchableOpacity style={styles.reloadBtn} onPress={handleReintentar} activeOpacity={0.7}>
+                      <Ionicons name="refresh-outline" size={16} color="#102e50" />
+                      <Text style={styles.reloadText}>Reintentar búsqueda</Text>
+                    </TouchableOpacity>
                   </>
                 )}
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.skipBtn}
-              onPress={() => router.replace('/(app)/pacientes')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.skipText}>Omitir por ahora</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.skipBtn}
+                  onPress={() => router.replace('/(app)/pacientes')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.skipText}>Omitir por ahora</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -245,7 +366,7 @@ export default function RegistroPacienteScreen() {
             </View>
 
             <View style={[styles.field, { flex: 2, marginLeft: 12 }]}>
-              <Text style={styles.label}>Cédula <Text style={styles.opt}>(opcional)</Text></Text>
+              <Text style={styles.label}>Cédula <Text style={styles.req}>*</Text></Text>
               <View style={styles.inputWrap}>
                 <Ionicons name="card-outline" size={18} color={Colors.textSecondary} style={styles.icon} />
                 <TextInput
@@ -253,41 +374,44 @@ export default function RegistroPacienteScreen() {
                   placeholder="1234567890"
                   placeholderTextColor={Colors.textSecondary}
                   value={cedula}
-                  onChangeText={setCedula}
+                  onChangeText={(t) => setCedula(t.replace(/\D/g, '').slice(0, 12))}
                   keyboardType="number-pad"
+                  maxLength={12}
                 />
               </View>
             </View>
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Diagnóstico / Enfermedad <Text style={styles.opt}>(opcional)</Text></Text>
+            <Text style={styles.label}>Diagnóstico / Enfermedad <Text style={styles.req}>*</Text></Text>
             <View style={styles.inputWrap}>
               <Ionicons name="medkit-outline" size={18} color={Colors.textSecondary} style={styles.icon} />
               <TextInput
                 style={styles.input}
-                placeholder="Ej: Alzheimer leve"
+                placeholder="Selecciona o escribe..."
                 placeholderTextColor={Colors.textSecondary}
                 value={enfermedad}
-                onChangeText={setEnfermedad}
+                onChangeText={(t) => { if (/^[^0-9]*$/.test(t)) setEnfermedad(t) }}
                 autoCapitalize="sentences"
               />
             </View>
+            <Sugerencias opciones={ENFERMEDADES} valor={enfermedad} onSelect={setEnfermedad} />
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>EPS <Text style={styles.opt}>(opcional)</Text></Text>
+            <Text style={styles.label}>EPS <Text style={styles.req}>*</Text></Text>
             <View style={styles.inputWrap}>
               <Ionicons name="medical-outline" size={18} color={Colors.textSecondary} style={styles.icon} />
               <TextInput
                 style={styles.input}
-                placeholder="Ej: Sura, Nueva EPS..."
+                placeholder="Selecciona o escribe..."
                 placeholderTextColor={Colors.textSecondary}
                 value={eps}
-                onChangeText={setEps}
+                onChangeText={(t) => { if (/^[^0-9]*$/.test(t)) setEps(t) }}
                 autoCapitalize="words"
               />
             </View>
+            <Sugerencias opciones={EPS_LIST} valor={eps} onSelect={setEps} />
           </View>
 
           {/* ── Contacto de emergencia ──────────────────────────── */}
@@ -297,7 +421,7 @@ export default function RegistroPacienteScreen() {
           </Text>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Nombre del familiar <Text style={styles.opt}></Text></Text>
+            <Text style={styles.label}>Nombre del familiar <Text style={styles.req}>*</Text></Text>
             <View style={styles.inputWrap}>
               <Ionicons name="people-outline" size={18} color={Colors.textSecondary} style={styles.icon} />
               <TextInput
@@ -312,7 +436,7 @@ export default function RegistroPacienteScreen() {
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Teléfono del familiar <Text style={styles.opt}></Text></Text>
+            <Text style={styles.label}>Teléfono del familiar <Text style={styles.req}>*</Text></Text>
             <View style={styles.inputWrap}>
               <Ionicons name="call-outline" size={18} color={Colors.textSecondary} style={styles.icon} />
               <TextInput
@@ -320,8 +444,9 @@ export default function RegistroPacienteScreen() {
                 placeholder="Ej: 3001234567"
                 placeholderTextColor={Colors.textSecondary}
                 value={familiar_telefono}
-                onChangeText={setFamiliarTelefono}
+                onChangeText={(t) => setFamiliarTelefono(t.replace(/\D/g, '').slice(0, 10))}
                 keyboardType="phone-pad"
+                maxLength={10}
               />
             </View>
           </View>
@@ -372,14 +497,26 @@ const styles = StyleSheet.create({
   icon:     { marginRight: 10 },
   input:    { flex: 1, paddingVertical: 13, fontSize: 15, color: Colors.text },
 
+  pillsRow: { marginTop: 8, marginBottom: 4 },
+  pill: {
+    backgroundColor: '#e8f0fb', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 7,
+    borderWidth: 1, borderColor: '#c7d9f5',
+  },
+  pillText: { fontSize: 13, color: '#102e50', fontWeight: '500' },
+
   btn:         { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 16, marginTop: 8, elevation: 4 },
   btnDisabled: { opacity: 0.65 },
   btnText:     { color: Colors.white, fontSize: 15, fontWeight: '700' },
 
-  // Paso 2
-  emptyBox:    { alignItems: 'center', paddingVertical: 28, gap: 10 },
-  emptyText:   { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  reloadBtn:   { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, borderColor: '#102e50', marginTop: 4 },
+  // Animación + búsqueda
+  lottieContainer: { alignItems: 'center', marginBottom: 8 },
+  lottie:          { width: 200, height: 200 },
+  buscandoTitle:   { fontSize: 16, fontWeight: '700', color: '#102e50', textAlign: 'center', marginBottom: 8 },
+  resultTitle:     { fontSize: 15, fontWeight: '700', color: '#2e7d32', textAlign: 'center', marginBottom: 16 },
+  noEncontradoTitle: { fontSize: 15, fontWeight: '700', color: Colors.text, textAlign: 'center', marginBottom: 8 },
+  noEncontradoDesc:  { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
+  reloadBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: '#102e50', marginBottom: 4 },
   reloadText:  { fontSize: 13, fontWeight: '600', color: '#102e50' },
 
   deviceCard:         { flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 10, backgroundColor: Colors.background },
