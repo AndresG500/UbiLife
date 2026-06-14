@@ -124,7 +124,7 @@ export default function VincularDispositivoScreen() {
           <View style={styles.center}>
             <LottieView
               ref={animRef}
-              source={require('../../animations/planet.json')}
+              source={require('../../../animations/planet.json')}
               autoPlay={false}
               loop
               style={styles.lottie}
