@@ -2,8 +2,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
 import asyncio
 import os
 import sentry_sdk
@@ -19,27 +21,15 @@ from routes.ruta_grupo import router as grupo_router
 from routes.ruta_alerta import router as alerta_router
 from routes.ruta_familiar import router as familiar_router
 from routes.ruta_modo_viaje import router as modo_viaje_router
+from routes.ruta_admin import router as admin_router
 from services.service_alerta import reenviar_alertas_activas, verificar_senal_perdida
 from utils.Logger import Logger
+from security.limiter import limiter
 
 _sentry_dsn = os.getenv("SENTRY_DSN")
 if _sentry_dsn:
     sentry_sdk.init(dsn=_sentry_dsn, traces_sample_rate=0.2)
 
-
-rate_limit_store: dict[str, list] = {}
-RATE_LIMIT = 120
-RATE_WINDOW = 60
-
-_trust_proxy = os.getenv("TRUST_PROXY", "0").lower() in ("1", "true", "yes")
-
-
-def get_client_ip(request: Request) -> str:
-    if _trust_proxy:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-    return request.client.host
 
 
 async def tarea_alertas():
@@ -87,6 +77,7 @@ async def lifespan(app: FastAPI):
     await db["UbicacionesCuidadores"].create_index("timestamp", expireAfterSeconds=900)
     await db["UbicacionesFamiliares"].create_index("timestamp", expireAfterSeconds=900)
     # Índices de consulta frecuente
+    await db["Administradores"].create_index("email", unique=True)
     await db["Cuidadores"].create_index("email", unique=True)
     await db["Familiares"].create_index("email", unique=True)
     await db["Dispositivos"].create_index("id_dispositivo", unique=True)
@@ -139,6 +130,10 @@ app = FastAPI(
     redoc_url=None if _produccion else "/redoc",
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "")
 _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or ["*"]
@@ -161,32 +156,6 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "0"
     return response
 
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    client_ip = get_client_ip(request)
-    now = datetime.now()
-
-    cutoff = now - timedelta(seconds=RATE_WINDOW)
-    timestamps = [ts for ts in rate_limit_store.get(client_ip, []) if ts > cutoff]
-
-    if len(timestamps) >= RATE_LIMIT:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Too many requests. Try again later."}
-        )
-
-    timestamps.append(now)
-    rate_limit_store[client_ip] = timestamps
-
-    # Evitar memory leak: limpiar IPs inactivas cuando el store crece mucho
-    if len(rate_limit_store) > 5000:
-        stale = [ip for ip, ts_list in rate_limit_store.items() if not any(t > cutoff for t in ts_list)]
-        for ip in stale:
-            del rate_limit_store[ip]
-
-    response = await call_next(request)
-    return response
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -212,6 +181,7 @@ app.include_router(grupo_router)
 app.include_router(alerta_router)
 app.include_router(familiar_router)
 app.include_router(modo_viaje_router)
+app.include_router(admin_router)
 
 
 @app.get("/")

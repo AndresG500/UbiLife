@@ -29,6 +29,7 @@ class PacienteBase(BaseModel):
     modo_viaje_inicio: Optional[datetime] = None
     modo_viaje_fin: Optional[datetime] = None    # None = indefinido
     modo_viaje_activado_por: Optional[str] = None
+    foto: Optional[str] = None
 
     @field_validator('nombre_paciente', 'enfermedad', 'cedula', 'eps', 'familiar_nombre', 'familiar_telefono', mode='before')
     @classmethod
@@ -62,6 +63,7 @@ class ActualizarPaciente(BaseModel):
     familiar_nombre: Optional[str] = Field(None, max_length=100)
     familiar_telefono: Optional[str] = Field(None, max_length=20)
     id_dispositivo: Optional[str] = Field(None)
+    foto: Optional[str] = None
 
 class ActivarModoViaje(BaseModel):
     paciente_id: str

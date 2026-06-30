@@ -1,18 +1,21 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from models.model_cuidador import RespuestaCuidador, CrearCuidador, ActualizarCuidador, VerificarCuidador
 from services.service_cuidador import registrar_cuidador, borrar_cuidador, actualizar_cuidador, verificar_cuidador, actualizar_fcm
 from services.service_auth import revocar_token
 from security.dependencies import get_cuidador_actual, oauth2_scheme
 from security.jwt_handler import verificar_token
+from security.limiter import limiter
 from database.database import get_database
 from pydantic import BaseModel, Field
+
 router = APIRouter(prefix="/cuidadores", tags=["Cuidadores"])
 
 class FCMToken(BaseModel):
     token: str = Field(..., max_length=512)
 
 @router.post("/registrar")
-async def registrar(datos: CrearCuidador):
+@limiter.limit("10/minute")
+async def registrar(request: Request, datos: CrearCuidador):
     resultado = await registrar_cuidador(datos)
     if "error" in resultado:
         raise HTTPException(status_code=400, detail=resultado["error"])
@@ -40,7 +43,8 @@ async def perfil(cuidador_actual = Depends(get_cuidador_actual)):
     return cuidador_actual
 
 @router.post("/verificar")
-async def verificar(datos: VerificarCuidador):
+@limiter.limit("5/minute")
+async def verificar(request: Request, datos: VerificarCuidador):
     resultado = await verificar_cuidador(datos.email, datos.password)
     if "error" in resultado:
         raise HTTPException(status_code=401, detail=resultado["error"])
