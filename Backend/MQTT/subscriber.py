@@ -141,7 +141,7 @@ async def mqtt_subscriber_task() -> None:
                 username=settings.MQTT_USER,
                 password=settings.MQTT_PASS,
                 tls_context=tls_context,
-                identifier=settings.MQTT_CLIENT_ID,
+                identifier=settings.mqtt_client_id,
                 keepalive=60,
             ) as client:
                 await client.subscribe(TOPIC_PATRON)

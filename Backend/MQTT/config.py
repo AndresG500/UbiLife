@@ -29,7 +29,11 @@ class Settings(BaseSettings):
     MQTT_PORT: int = 8883
     MQTT_USER: str
     MQTT_PASS: str
-    MQTT_CLIENT_ID: str = _default_client_id
+    MQTT_CLIENT_ID: str = ""
+
+    @property
+    def mqtt_client_id(self) -> str:
+        return self.MQTT_CLIENT_ID.strip() or _default_client_id
  
  
 settings = Settings()
