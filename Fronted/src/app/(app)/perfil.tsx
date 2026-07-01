@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ScrollView, Alert,
+  ActivityIndicator, ScrollView, Alert, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -9,7 +9,9 @@ import { useNavigation } from 'expo-router'
 import { Colors } from '@/constants/Colors'
 import { useAuth } from '@/context/AuthContext'
 import AnimatedScreen from '@/components/AnimatedScreen'
-import { cuidadorService, familiarService } from '@/services/api'
+import { cuidadorService, familiarService, pacienteService, reporteService } from '@/services/api'
+
+type PacienteConDispositivo = { id_paciente: string; nombre_paciente: string; id_dispositivo: string }
 
 export default function PerfilScreen() {
   const navigation = useNavigation()
@@ -20,6 +22,17 @@ export default function PerfilScreen() {
   const [loading,  setLoading]  = useState(false)
   const [saved,    setSaved]    = useState(false)
   const [error,    setError]    = useState('')
+
+  // ── Reportar un problema ──
+  const [reporteVisible,    setReporteVisible]    = useState(false)
+  const [tipoProblema,      setTipoProblema]      = useState<'app' | 'dispositivo'>('app')
+  const [pacientes,         setPacientes]         = useState<PacienteConDispositivo[]>([])
+  const [cargandoPacientes, setCargandoPacientes]  = useState(false)
+  const [pacienteId,        setPacienteId]        = useState<string | null>(null)
+  const [descripcionReporte,setDescripcionReporte] = useState('')
+  const [enviandoReporte,   setEnviandoReporte]    = useState(false)
+  const [errorReporte,      setErrorReporte]       = useState('')
+  const [reporteEnviado,    setReporteEnviado]     = useState(false)
 
   const inicial = cuidador?.name?.charAt(0)?.toUpperCase() ?? '?'
   const rolLabel = tipoUsuario === 'familiar' ? 'Familiar' : 'Cuidador'
@@ -63,6 +76,58 @@ export default function PerfilScreen() {
         },
       },
     ])
+  }
+
+  const abrirReporte = () => {
+    setTipoProblema('app')
+    setPacienteId(null)
+    setDescripcionReporte('')
+    setErrorReporte('')
+    setReporteVisible(true)
+  }
+
+  const seleccionarTipoDispositivo = async () => {
+    setTipoProblema('dispositivo')
+    if (pacientes.length > 0) return
+    setCargandoPacientes(true)
+    try {
+      const res = tipoUsuario === 'familiar'
+        ? await familiarService.misPacientes()
+        : await pacienteService.listar()
+      const conDispositivo = (res.data as any[]).filter(p => !!p.id_dispositivo)
+      setPacientes(conDispositivo)
+    } catch {
+      setErrorReporte('No se pudieron cargar tus pacientes.')
+    } finally {
+      setCargandoPacientes(false)
+    }
+  }
+
+  const handleEnviarReporte = async () => {
+    if (descripcionReporte.trim().length < 10) {
+      setErrorReporte('Describe el problema con al menos 10 caracteres.')
+      return
+    }
+    if (tipoProblema === 'dispositivo' && !pacienteId) {
+      setErrorReporte('Selecciona a qué paciente pertenece el dispositivo.')
+      return
+    }
+    setEnviandoReporte(true)
+    setErrorReporte('')
+    try {
+      await reporteService.crear({
+        descripcion: descripcionReporte.trim(),
+        relacionado_dispositivo: tipoProblema === 'dispositivo',
+        paciente_id: tipoProblema === 'dispositivo' ? pacienteId! : undefined,
+      })
+      setReporteVisible(false)
+      setReporteEnviado(true)
+      setTimeout(() => setReporteEnviado(false), 3000)
+    } catch (e: any) {
+      setErrorReporte(e?.response?.data?.detail ?? 'No se pudo enviar el reporte.')
+    } finally {
+      setEnviandoReporte(false)
+    }
   }
 
   return (
@@ -198,6 +263,27 @@ export default function PerfilScreen() {
           </View>
         </View>
 
+        {/* Card: soporte */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="help-buoy-outline" size={18} color="#102e50" />
+            <Text style={styles.cardTitle}>Soporte</Text>
+          </View>
+
+          {reporteEnviado && (
+            <View style={styles.savedBox}>
+              <Ionicons name="checkmark-circle" size={16} color={Colors.success} style={{ marginRight: 6 }} />
+              <Text style={styles.savedText}>Reporte enviado. El administrador lo revisará pronto.</Text>
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.reportBtn} onPress={abrirReporte} activeOpacity={0.85}>
+            <Ionicons name="flag-outline" size={18} color="#102e50" style={{ marginRight: 8 }} />
+            <Text style={styles.reportBtnText}>Reportar un problema</Text>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
         {/* Logout */}
         <TouchableOpacity style={styles.logoutCard} onPress={handleLogout} activeOpacity={0.85}>
           <View style={styles.logoutIconWrap}>
@@ -207,6 +293,111 @@ export default function PerfilScreen() {
           <Ionicons name="chevron-forward" size={18} color={Colors.error} style={{ opacity: 0.6 }} />
         </TouchableOpacity>
       </ScrollView>
+
+      {/* ── Modal reportar problema ── */}
+      <Modal visible={reporteVisible} transparent animationType="slide">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Reportar un problema</Text>
+              <TouchableOpacity onPress={() => setReporteVisible(false)} hitSlop={10}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {errorReporte ? (
+                <View style={styles.errorBox}>
+                  <Ionicons name="warning-outline" size={14} color={Colors.error} style={{ marginRight: 6 }} />
+                  <Text style={styles.errorText}>{errorReporte}</Text>
+                </View>
+              ) : null}
+
+              <Text style={styles.mLabel}>Tipo de problema</Text>
+              <View style={styles.tipoRow}>
+                <TouchableOpacity
+                  style={[styles.tipoOpcion, tipoProblema === 'app' && styles.tipoOpcionActiva]}
+                  onPress={() => setTipoProblema('app')}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="phone-portrait-outline" size={18} color={tipoProblema === 'app' ? Colors.primary : Colors.textSecondary} />
+                  <Text style={[styles.tipoOpcionText, tipoProblema === 'app' && styles.tipoOpcionTextActiva]}>Problema de la app</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tipoOpcion, tipoProblema === 'dispositivo' && styles.tipoOpcionActiva]}
+                  onPress={seleccionarTipoDispositivo}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="hardware-chip-outline" size={18} color={tipoProblema === 'dispositivo' ? Colors.primary : Colors.textSecondary} />
+                  <Text style={[styles.tipoOpcionText, tipoProblema === 'dispositivo' && styles.tipoOpcionTextActiva]}>Dispositivo GPS</Text>
+                </TouchableOpacity>
+              </View>
+
+              {tipoProblema === 'dispositivo' && (
+                <>
+                  <Text style={styles.mLabel}>¿A qué paciente pertenece?</Text>
+                  {cargandoPacientes ? (
+                    <ActivityIndicator style={{ marginVertical: 12 }} color={Colors.primary} />
+                  ) : pacientes.length === 0 ? (
+                    <Text style={styles.sinPacientesText}>No tienes pacientes con un dispositivo vinculado.</Text>
+                  ) : (
+                    <View style={{ marginBottom: 20 }}>
+                      {pacientes.map(p => (
+                        <TouchableOpacity
+                          key={p.id_paciente}
+                          style={[styles.pacienteFila, pacienteId === p.id_paciente && styles.pacienteFilaActiva]}
+                          onPress={() => setPacienteId(p.id_paciente)}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons
+                            name={pacienteId === p.id_paciente ? 'radio-button-on' : 'radio-button-off'}
+                            size={18}
+                            color={pacienteId === p.id_paciente ? Colors.primary : Colors.textSecondary}
+                          />
+                          <Text style={styles.pacienteFilaText}>{p.nombre_paciente}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+
+              <Text style={styles.mLabel}>Descripción</Text>
+              <View style={styles.mTextareaWrap}>
+                <TextInput
+                  style={styles.mTextarea}
+                  value={descripcionReporte}
+                  onChangeText={setDescripcionReporte}
+                  placeholder="Describe qué está pasando..."
+                  placeholderTextColor={Colors.textSecondary}
+                  multiline
+                  numberOfLines={4}
+                  maxLength={500}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.mBtn, enviandoReporte && { opacity: 0.6 }]}
+                onPress={handleEnviarReporte}
+                disabled={enviandoReporte}
+                activeOpacity={0.85}
+              >
+                {enviandoReporte
+                  ? <ActivityIndicator color={Colors.white} />
+                  : (
+                    <>
+                      <Ionicons name="send-outline" size={18} color={Colors.white} style={{ marginRight: 8 }} />
+                      <Text style={styles.mBtnText}>Enviar reporte</Text>
+                    </>
+                  )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
     </AnimatedScreen>
   )
@@ -324,4 +515,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   logoutText: { flex: 1, color: Colors.error, fontSize: 15, fontWeight: '700' },
+
+  /* Soporte */
+  reportBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12,
+    paddingVertical: 13, paddingHorizontal: 14,
+  },
+  reportBtnText: { flex: 1, fontSize: 14, fontWeight: '600', color: Colors.text },
+
+  /* Modal reportar problema */
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  modalSheet:   { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '85%' },
+  modalHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle:   { fontSize: 18, fontWeight: '700', color: '#102e50' },
+
+  mLabel: { fontSize: 13, fontWeight: '600', color: Colors.text, marginBottom: 8 },
+
+  tipoRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  tipoOpcion: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12,
+    paddingVertical: 12, backgroundColor: Colors.white,
+  },
+  tipoOpcionActiva:     { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+  tipoOpcionText:       { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, textAlign: 'center' },
+  tipoOpcionTextActiva: { color: Colors.primary },
+
+  sinPacientesText: { fontSize: 13, color: Colors.textSecondary, marginBottom: 20 },
+  pacienteFila: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 11, paddingHorizontal: 14, borderRadius: 10,
+    borderWidth: 1.5, borderColor: Colors.border, marginBottom: 8,
+  },
+  pacienteFilaActiva: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+  pacienteFilaText:   { fontSize: 14, color: Colors.text, fontWeight: '500' },
+
+  mTextareaWrap: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, backgroundColor: Colors.background, marginBottom: 20 },
+  mTextarea:     { padding: 14, fontSize: 14, color: Colors.text, minHeight: 100, textAlignVertical: 'top' },
+
+  mBtn:      { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 15, elevation: 3, marginBottom: 8 },
+  mBtnText:  { color: Colors.white, fontSize: 15, fontWeight: '700' },
 })

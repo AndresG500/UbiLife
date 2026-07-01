@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ScrollView, FlatList,
+  ActivityIndicator, ScrollView, FlatList, Image, Alert,
 } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
 
 const ENFERMEDADES = [
   'Alzheimer leve',
@@ -96,6 +97,7 @@ export default function RegistroPacienteScreen() {
   const [eps,               setEps]               = useState('')
   const [familiar_nombre,   setFamiliarNombre]    = useState('')
   const [familiar_telefono, setFamiliarTelefono]  = useState('')
+  const [foto,              setFoto]              = useState<string | null>(null)
   const [loading,           setLoading]           = useState(false)
   const [error,             setError]             = useState('')
 
@@ -126,6 +128,51 @@ export default function RegistroPacienteScreen() {
       animRef.current?.pause()
       setPaso(2)
     }
+  }
+
+  const handleSeleccionarFoto = () => {
+    Alert.alert('Foto del paciente', 'Elige una opción', [
+      {
+        text: 'Galería',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+          if (status !== 'granted') {
+            Alert.alert('Permiso requerido', 'Se necesita acceso a la galería para seleccionar una foto.')
+            return
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.6,
+            base64: true,
+          })
+          if (!result.canceled && result.assets[0].base64) {
+            setFoto(`data:image/jpeg;base64,${result.assets[0].base64}`)
+          }
+        },
+      },
+      {
+        text: 'Cámara',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync()
+          if (status !== 'granted') {
+            Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para tomar una foto.')
+            return
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.6,
+            base64: true,
+          })
+          if (!result.canceled && result.assets[0].base64) {
+            setFoto(`data:image/jpeg;base64,${result.assets[0].base64}`)
+          }
+        },
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ])
   }
 
   const handleReintentar = () => {
@@ -177,6 +224,7 @@ export default function RegistroPacienteScreen() {
         familiar_nombre:   familiar_nombre.trim(),
         familiar_telefono: familiar_telefono.trim(),
         id_cuidador:       cuidador?.id ?? '',
+        ...(foto ? { foto } : {}),
       } as any)
       const id = res.data?.id_paciente
       if (id) {
@@ -330,6 +378,23 @@ export default function RegistroPacienteScreen() {
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
+
+          {/* ── Foto del paciente ────────────────────────────────── */}
+          <View style={styles.fotoContainer}>
+            <TouchableOpacity style={styles.fotoBtn} onPress={handleSeleccionarFoto} activeOpacity={0.8}>
+              {foto ? (
+                <Image source={{ uri: foto }} style={styles.fotoImagen} />
+              ) : (
+                <View style={styles.fotoPlaceholder}>
+                  <Ionicons name="camera-outline" size={28} color={Colors.textSecondary} />
+                </View>
+              )}
+              <View style={styles.fotoBadge}>
+                <Ionicons name="pencil" size={12} color={Colors.white} />
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.fotoLabel}>Foto del paciente{'\n'}<Text style={styles.opt}>Opcional</Text></Text>
+          </View>
 
           {/* ── Información básica ───────────────────────────────── */}
           <Text style={styles.sectionLabel}>Información básica</Text>
@@ -528,4 +593,11 @@ const styles = StyleSheet.create({
 
   skipBtn:  { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
   skipText: { fontSize: 14, color: Colors.textSecondary, textDecorationLine: 'underline' },
+
+  fotoContainer:   { alignItems: 'center', marginBottom: 20, marginTop: 4 },
+  fotoBtn:         { position: 'relative', marginBottom: 8 },
+  fotoImagen:      { width: 88, height: 88, borderRadius: 44, borderWidth: 2, borderColor: '#102e50' },
+  fotoPlaceholder: { width: 88, height: 88, borderRadius: 44, backgroundColor: Colors.background, borderWidth: 2, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center' },
+  fotoBadge:       { position: 'absolute', bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: '#102e50', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: Colors.white },
+  fotoLabel:       { fontSize: 13, fontWeight: '600', color: Colors.text, textAlign: 'center', lineHeight: 18 },
 })

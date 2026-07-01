@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator,
+  ScrollView, ActivityIndicator, RefreshControl,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -161,6 +161,8 @@ export default function AlertasScreen() {
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState('')
   const [resolviendo, setResolviendo] = useState<string | null>(null)
+  const [refreshing,  setRefreshing]  = useState(false)
+  const [filtro,      setFiltro]      = useState<'todas' | 'activas' | 'resueltas'>('todas')
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -184,6 +186,18 @@ export default function AlertasScreen() {
   }, [esFamiliar])
 
   useFocusEffect(useCallback(() => { cargar() }, [cargar]))
+
+  const onRefresh = async () => {
+    setRefreshing(true)
+    await cargar()
+    setRefreshing(false)
+  }
+
+  const alertasFiltradas = alertas.filter(a => {
+    if (filtro === 'activas')   return a.estado === 'enviada' || a.estado === 'pendiente'
+    if (filtro === 'resueltas') return a.estado === 'resuelta' || a.estado === 'fallida'
+    return true
+  })
 
   const handleResolver = async (id: string) => {
     setResolviendo(id)
@@ -210,11 +224,28 @@ export default function AlertasScreen() {
         <Text style={styles.headerTitle}>Historial de alertas</Text>
       </View>
 
+      {/* ── Chips de filtro ── */}
+      <View style={styles.filtrosRow}>
+        {(['todas', 'activas', 'resueltas'] as const).map(f => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.chip, filtro === f && styles.chipActive]}
+            onPress={() => setFiltro(f)}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.chipText, filtro === f && styles.chipTextActive]}>
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {/* ── Contenido ── */}
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
       >
         {loading ? (
           <ActivityIndicator style={{ marginTop: 48 }} size="large" color={Colors.primary} />
@@ -227,14 +258,20 @@ export default function AlertasScreen() {
               <Text style={styles.retryText}>Reintentar</Text>
             </TouchableOpacity>
           </View>
-        ) : alertas.length === 0 ? (
+        ) : alertasFiltradas.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Ionicons name="notifications-off-outline" size={52} color={Colors.border} />
-            <Text style={styles.emptyTitle}>Sin alertas</Text>
-            <Text style={styles.emptyDesc}>No hay alertas registradas aún.</Text>
+            <Text style={styles.emptyTitle}>
+              {alertas.length === 0 ? 'Sin alertas' : 'Sin resultados'}
+            </Text>
+            <Text style={styles.emptyDesc}>
+              {alertas.length === 0
+                ? 'No hay alertas registradas aún.'
+                : `No hay alertas ${filtro === 'activas' ? 'activas' : 'resueltas'}.`}
+            </Text>
           </View>
         ) : (
-          alertas.map((item) => (
+          alertasFiltradas.map((item) => (
             <AlertaCard
               key={item.id}
               item={item}
@@ -317,4 +354,13 @@ const styles = StyleSheet.create({
     borderRadius: 12, paddingHorizontal: 28, paddingVertical: 12,
   },
   retryText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
+
+  filtrosRow: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: 16,
+    paddingVertical: 12, backgroundColor: '#102e50',
+  },
+  chip:          { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)' },
+  chipActive:    { backgroundColor: Colors.white },
+  chipText:      { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
+  chipTextActive:{ color: '#102e50' },
 })

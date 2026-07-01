@@ -83,6 +83,11 @@ export const pacienteService = {
     nombre_paciente: string
     edad_paciente: number
     enfermedad?: string
+    cedula?: string
+    eps?: string
+    familiar_nombre?: string
+    familiar_telefono?: string
+    foto?: string
     id_cuidador: string
     id_dispositivo?: string
   }) => api.post('/pacientes/registrar', datos),
@@ -198,6 +203,46 @@ export const modoViajeService = {
   activarFamiliar:   (data: ActivarModoViajePayload) => api.post('/modo-viaje/familiar/activar', data),
   desactivarFamiliar:(pacienteId: string)            => api.post(`/modo-viaje/familiar/desactivar/${pacienteId}`),
   estadoFamiliar:    (pacienteId: string)            => api.get(`/modo-viaje/familiar/${pacienteId}`),
+}
+
+// ── Reportes ───────────────────────────────────────────────────────────────
+
+export const reporteService = {
+  crear: (datos: { descripcion: string; relacionado_dispositivo: boolean; paciente_id?: string }) =>
+    api.post('/reportes/', datos),
+}
+
+// ── Administrador ──────────────────────────────────────────────────────────────
+
+export const adminService = {
+  login: (email: string, password: string) =>
+    api.post('/admin/login', { email, password }),
+
+  perfil: () => api.get('/admin/perfil'),
+
+  logout: () => api.post('/admin/logout').catch(() => {}),
+
+  estadisticas: () => api.get('/admin/estadisticas'),
+
+  cuidadores: () => api.get('/admin/cuidadores'),
+
+  cambiarEstadoCuidador: (id: string, activo: boolean) =>
+    api.patch(`/admin/cuidadores/${id}/estado`, { activo }),
+
+  dispositivos: () => api.get('/admin/dispositivos'),
+
+  bloquearDispositivo: (id_dispositivo: string) =>
+    api.patch(`/admin/dispositivos/${id_dispositivo}/bloquear`),
+
+  familiares: () => api.get('/admin/familiares'),
+
+  cambiarEstadoFamiliar: (id: string, activo: boolean) =>
+    api.patch(`/admin/familiares/${id}/estado`, { activo }),
+
+  reportes: () => api.get('/admin/reportes'),
+
+  cambiarEstadoReporte: (id: string, estado: 'recibido' | 'en_revision' | 'solucionado') =>
+    api.patch(`/admin/reportes/${id}/estado`, { estado }),
 }
 
 export default api

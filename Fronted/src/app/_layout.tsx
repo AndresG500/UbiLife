@@ -19,30 +19,35 @@ LogBox.ignoreLogs([
   '`expo-notifications` functionality is not fully supported in Expo Go',
 ])
 
-const RUTAS_PUBLICAS = ['login', 'register', 'register-cuidador', 'register-familiar', 'elegir-rol']
+const RUTAS_PUBLICAS = ['login', 'register', 'register-cuidador', 'register-familiar', 'elegir-rol', 'admin-login']
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { token, loading } = useAuth()
+  const { token, loading, tipoUsuario } = useAuth()
   const segments = useSegments()
   const router   = useRouter()
 
   useEffect(() => {
     if (loading) return
-    const inApp     = segments[0] === '(app)'
-    const enPublico = RUTAS_PUBLICAS.includes(segments[0] as string)
+    const seg       = segments[0] as string
+    const inApp     = seg === '(app)'
+    const inAdmin   = seg === '(admin)'
+    const enPublico = RUTAS_PUBLICAS.includes(seg)
 
-    if (!token && inApp) {
-      router.replace('/login')
-    } else if (!token && !enPublico) {
-      router.replace('/login')
-    } else if (token && !inApp) {
-      router.replace('/(app)')
+    if (!token) {
+      if (inApp || inAdmin) router.replace('/login')
+      else if (!enPublico)  router.replace('/login')
+    } else if (tipoUsuario === 'admin') {
+      if (!inAdmin) router.replace('/(admin)' as any)
+    } else {
+      if (!inApp) router.replace('/(app)')
     }
-  }, [token, loading, segments, router])
+  }, [token, loading, tipoUsuario, segments, router])
 
   if (loading) return null
-  const inApp = segments[0] === '(app)'
-  if (!token && inApp) return null
+  const seg0    = segments[0] as string
+  const inApp   = seg0 === '(app)'
+  const inAdmin = seg0 === '(admin)'
+  if (!token && (inApp || inAdmin)) return null
   return <>{children}</>
 }
 

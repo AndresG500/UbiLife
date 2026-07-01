@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, ActivityIndicator, Alert, Modal,
-  TextInput, KeyboardAvoidingView, Platform,
+  TextInput, KeyboardAvoidingView, Platform, Image,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -51,13 +51,24 @@ function PacienteCard({
   }
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, !pac.activo && styles.cardInactivo]}>
       <View style={styles.cardHead}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{inicial}</Text>
-        </View>
+        {pac.foto ? (
+          <Image source={{ uri: pac.foto }} style={styles.avatarFoto} />
+        ) : (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{inicial}</Text>
+          </View>
+        )}
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardNombre}>{nombre}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Text style={styles.cardNombre}>{nombre}</Text>
+            {!pac.activo && (
+              <View style={styles.inactivoBadge}>
+                <Text style={styles.inactivoBadgeText}>Inactivo</Text>
+              </View>
+            )}
+          </View>
           {pac.enfermedad ? (
             <Text style={styles.cardEnfermedad}>{pac.enfermedad}</Text>
           ) : null}
@@ -65,7 +76,9 @@ function PacienteCard({
         {pac.modo_viaje_activo && (
           <View style={styles.viajeChip}>
             <Ionicons name="airplane" size={11} color="#16a34a" />
-            <Text style={styles.viajeChipText}>Modo viaje</Text>
+            <Text style={styles.viajeChipText}>
+              {pac.modo_viaje_tipo === 'vehiculo' ? 'Vehículo' : 'Modo viaje'}
+            </Text>
           </View>
         )}
         {esCuidador && (
@@ -74,6 +87,15 @@ function PacienteCard({
           </TouchableOpacity>
         )}
       </View>
+
+      {pac.modo_viaje_activo && pac.modo_viaje_activado_por && (
+        <View style={styles.viajeActivadoPor}>
+          <Ionicons name="person-circle-outline" size={13} color="#16a34a" />
+          <Text style={styles.viajeActivadoPorText}>
+            Activado por: {pac.modo_viaje_activado_por}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.sep} />
 
@@ -430,6 +452,7 @@ const styles = StyleSheet.create({
   },
   cardHead:      { flexDirection: 'row', alignItems: 'center', gap: 14 },
   avatar:        { width: 46, height: 46, borderRadius: 23, backgroundColor: '#e8eef5', justifyContent: 'center', alignItems: 'center' },
+  avatarFoto:    { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: '#102e50' },
   avatarText:    { fontSize: 20, fontWeight: '700', color: '#102e50' },
   cardNombre:    { fontSize: 16, fontWeight: '700', color: '#102e50' },
   cardEnfermedad:{ fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
@@ -437,6 +460,13 @@ const styles = StyleSheet.create({
 
   viajeChip:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#bbf7d0' },
   viajeChipText: { fontSize: 11, fontWeight: '600', color: '#16a34a' },
+
+  viajeActivadoPor:     { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -6, marginBottom: 4, paddingHorizontal: 2 },
+  viajeActivadoPorText: { fontSize: 11, color: '#16a34a', fontWeight: '500' },
+
+  cardInactivo:      { opacity: 0.6 },
+  inactivoBadge:     { backgroundColor: '#f1f5f9', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: '#e2e8f0' },
+  inactivoBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.textSecondary },
 
   sep:           { height: 1, backgroundColor: '#f0f4f8', marginVertical: 14 },
   infoBloque:    { gap: 8 },

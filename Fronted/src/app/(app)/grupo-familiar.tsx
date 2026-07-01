@@ -16,6 +16,7 @@ import { enviarUbicacionFamiliar } from '@/services/ubicacion'
 import { mensajeDeError } from '@/utils/errores'
 import ConfirmModal from '@/components/ConfirmModal'
 import AnimatedScreen from '@/components/AnimatedScreen'
+import { reverseGeocode } from '@/utils/geocoding'
 
 interface Grupo {
   id:                    string
@@ -33,16 +34,25 @@ interface MiembrosGrupo {
   familiares: any[]
 }
 
-function formatCoord(ub: { latitud?: number; longitud?: number; lat?: number; lng?: number } | null | undefined): string | null {
-  if (!ub) return null
-  const lat = ub.latitud ?? ub.lat
-  const lng = ub.longitud ?? ub.lng
-  if (lat == null || lng == null) return null
-  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+function UbicacionLabel({ ub }: { ub: { latitud?: number; longitud?: number; lat?: number; lng?: number } | null | undefined }) {
+  const [texto, setTexto] = useState<string | null>(null)
+  useEffect(() => {
+    if (!ub) return
+    const lat = ub.latitud ?? ub.lat
+    const lng = ub.longitud ?? ub.lng
+    if (lat == null || lng == null) return
+    reverseGeocode(lat, lng).then(setTexto)
+  }, [ub])
+  if (!texto) return null
+  return (
+    <View style={styles.coordRow}>
+      <Ionicons name="location" size={11} color={Colors.textSecondary} />
+      <Text style={styles.coordText} numberOfLines={2}>{texto}</Text>
+    </View>
+  )
 }
 
 function PacienteCard({ pac }: { pac: any }) {
-  const coord = formatCoord(pac.ultima_ubicacion)
   return (
     <View style={styles.memberCard}>
       <View style={styles.memberIconPac}>
@@ -53,11 +63,8 @@ function PacienteCard({ pac }: { pac: any }) {
         {!!pac.enfermedad && (
           <Text style={styles.memberSub}>{pac.enfermedad}</Text>
         )}
-        {coord ? (
-          <View style={styles.coordRow}>
-            <Ionicons name="location" size={11} color={Colors.textSecondary} />
-            <Text style={styles.coordText}>{coord}</Text>
-          </View>
+        {pac.ultima_ubicacion ? (
+          <UbicacionLabel ub={pac.ultima_ubicacion} />
         ) : (
           <Text style={styles.sinUbi}>Sin ubicación reciente</Text>
         )}
@@ -67,7 +74,6 @@ function PacienteCard({ pac }: { pac: any }) {
 }
 
 function FamiliarCard({ fam, esMismo }: { fam: any; esMismo?: boolean }) {
-  const coord = formatCoord(fam.ultima_ubicacion)
   return (
     <View style={styles.memberCard}>
       <View style={styles.memberIconFam}>
@@ -78,11 +84,8 @@ function FamiliarCard({ fam, esMismo }: { fam: any; esMismo?: boolean }) {
           {fam.name || fam.email}
           {esMismo && <Text style={styles.tuTag}> (Tú)</Text>}
         </Text>
-        {coord ? (
-          <View style={styles.coordRow}>
-            <Ionicons name="location" size={11} color={Colors.textSecondary} />
-            <Text style={styles.coordText}>{coord}</Text>
-          </View>
+        {fam.ultima_ubicacion ? (
+          <UbicacionLabel ub={fam.ultima_ubicacion} />
         ) : (
           <Text style={styles.sinUbi}>Sin ubicación reciente</Text>
         )}

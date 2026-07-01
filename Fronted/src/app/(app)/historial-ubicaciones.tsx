@@ -8,6 +8,7 @@ import { Colors } from '@/constants/Colors'
 import { pacienteService, familiarService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import AnimatedScreen from '@/components/AnimatedScreen'
+import { reverseGeocode } from '@/utils/geocoding'
 
 interface Ubicacion {
   id: string
@@ -104,6 +105,7 @@ export default function HistorialUbicacionesScreen() {
   const [pacientes,         setPacientes]         = useState<any[]>([])
   const [ubicaciones,       setUbicaciones]       = useState<Ubicacion[]>([])
   const [selectedPaciente,  setSelectedPaciente]  = useState<string | null>(null)
+  const [direccion,         setDireccion]         = useState<string | null>(null)
 
   const cargarRuta = useCallback(async (pacienteId: string) => {
     try {
@@ -129,8 +131,8 @@ export default function HistorialUbicacionesScreen() {
         const id = pacs[0].id_paciente ?? pacs[0].id
         setSelectedPaciente(id)
       }
-    } catch (err) {
-      console.error('Error cargando datos:', err)
+    } catch {
+      // silencioso
     } finally {
       setLoading(false)
     }
@@ -142,10 +144,15 @@ export default function HistorialUbicacionesScreen() {
     if (selectedPaciente) cargarRuta(selectedPaciente)
   }, [selectedPaciente, cargarRuta])
 
-  const pacSeleccionado = pacientes.find(p => (p.id_paciente ?? p.id) === selectedPaciente)
-  const routeCoordinates = ubicaciones
-    .slice(0, 100)
-    .map(u => ({ latitude: u.coordenadas.latitud, longitude: u.coordenadas.longitud }))
+  const pacSeleccionado  = pacientes.find(p => (p.id_paciente ?? p.id) === selectedPaciente)
+  const ultimas100       = ubicaciones.slice(-100)
+  const routeCoordinates = ultimas100.map(u => ({ latitude: u.coordenadas.latitud, longitude: u.coordenadas.longitud }))
+
+  useEffect(() => {
+    if (ubicaciones.length === 0) { setDireccion(null); return }
+    const ultimo = ubicaciones[ubicaciones.length - 1]
+    reverseGeocode(ultimo.coordenadas.latitud, ultimo.coordenadas.longitud).then(setDireccion)
+  }, [ubicaciones])
 
   if (loading) {
     return (
@@ -223,8 +230,8 @@ export default function HistorialUbicacionesScreen() {
               </View>
               <View style={styles.infoRow}>
                 <Ionicons name="location" size={14} color={Colors.textSecondary} />
-                <Text style={styles.infoCoordenadas}>
-                  {lat?.toFixed(5) ?? '—'}, {lng?.toFixed(5) ?? '—'}
+                <Text style={styles.infoCoordenadas} numberOfLines={2}>
+                  {direccion ?? `${lat?.toFixed(5) ?? '—'}, ${lng?.toFixed(5) ?? '—'}`}
                 </Text>
               </View>
               {tsStr && (
@@ -233,7 +240,11 @@ export default function HistorialUbicacionesScreen() {
                   <Text style={styles.infoTs}>{tsStr}</Text>
                 </View>
               )}
-              <Text style={styles.infoPuntos}>{ubicaciones.length} puntos · últimos 7 días</Text>
+              <Text style={styles.infoPuntos}>
+                {ubicaciones.length > 100
+                  ? `Mostrando los últimos 100 de ${ubicaciones.length} puntos · últimos 7 días`
+                  : `${ubicaciones.length} puntos · últimos 7 días`}
+              </Text>
             </View>
           )
         })()}

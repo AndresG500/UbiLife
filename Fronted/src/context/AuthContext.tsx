@@ -13,7 +13,7 @@ interface Cuidador {
   phone?: string
 }
 
-type TipoUsuario = 'cuidador' | 'familiar'
+type TipoUsuario = 'cuidador' | 'familiar' | 'admin'
 
 interface AuthContextType {
   token:     string | null
@@ -43,7 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const tipo = await AsyncStorage.getItem('tipoUsuario') as TipoUsuario | null
 
       if (t) {
-        const endpoint = tipo === 'familiar' ? '/familiares/grupos' : '/cuidadores/perfil'
+        const endpoint = tipo === 'familiar'
+        ? '/familiares/grupos'
+        : tipo === 'admin'
+        ? '/admin/perfil'
+        : '/cuidadores/perfil'
         try {
           await axios.get(`${BASE_URL}${endpoint}`, {
             headers: { Authorization: `Bearer ${t}` },

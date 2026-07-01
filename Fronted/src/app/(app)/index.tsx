@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, Image, ScrollView } from 'react-native'
 import WebView from 'react-native-webview'
 import { useNavigation, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -135,6 +135,32 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
           '<div style="background:white;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;color:#102e50;margin-top:3px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.18);">' + htmlEncode(nombre) + '</div>' +
         '</div>';
       return L.divIcon({ html: html, className: '', iconSize: [90, 58], iconAnchor: [45, 18] });
+    }
+
+    function crearIconoPacienteOffline(nombre) {
+      var html =
+        '<div style="display:flex;flex-direction:column;align-items:center;opacity:0.75;">' +
+          '<div style="width:36px;height:36px;border-radius:50%;background:#6b7280;border:3px solid #f97316;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3)">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="white">' +
+              '<path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>' +
+            '</svg>' +
+          '</div>' +
+          '<div style="background:#f97316;border-radius:6px;padding:2px 7px;font-size:9px;font-weight:700;color:white;margin-top:3px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.18);">Última señal</div>' +
+          '<div style="background:white;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;color:#6b7280;margin-top:2px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.18);">' + htmlEncode(nombre) + '</div>' +
+        '</div>';
+      return L.divIcon({ html: html, className: '', iconSize: [90, 72], iconAnchor: [45, 18] });
+    }
+
+    function setMarkerOffline(id) {
+      if (!markers[id]) return;
+      var nombre = pacienteNames[id] || 'Paciente';
+      markers[id].setIcon(crearIconoPacienteOffline(nombre));
+    }
+
+    function setMarkerOnline(id) {
+      if (!markers[id]) return;
+      var nombre = pacienteNames[id] || 'Paciente';
+      markers[id].setIcon(crearIconoPaciente(nombre));
     }
 
     var cuidadorIcon = L.divIcon({
@@ -282,7 +308,8 @@ export default function MapScreen() {
   const gruposFamiliarRef = useRef<any[]>([])
   const zonasRef          = useRef<any[]>([])
   const mapaListo         = useRef(false)
-  const [rutaVisible, setRutaVisible] = useState(false)
+  const [rutaVisible,   setRutaVisible]   = useState(false)
+  const [modalPaciente, setModalPaciente] = useState<any | null>(null)
 
   const { ubicacion, gpsActivo } = useSSEUbicacion(selPacId)
 
@@ -439,14 +466,14 @@ export default function MapScreen() {
   }, [ubicacion, selPacId])
 
   useEffect(() => {
-    if (!mapaListo.current) return
+    if (!mapaListo.current || !selPacId) return
     if (!gpsActivo && ubicacion) {
-      const js = `showSignalLostCircle(${ubicacion.latitude}, ${ubicacion.longitude}); true;`
+      const js = `showSignalLostCircle(${ubicacion.latitude}, ${ubicacion.longitude}); setMarkerOffline('${selPacId}'); true;`
       webViewRef.current?.injectJavaScript(js)
     } else {
-      webViewRef.current?.injectJavaScript('hideSignalLostCircle(); true;')
+      webViewRef.current?.injectJavaScript(`hideSignalLostCircle(); setMarkerOnline('${selPacId}'); true;`)
     }
-  }, [gpsActivo, ubicacion])
+  }, [gpsActivo, ubicacion, selPacId])
 
   useEffect(() => {
     gruposRef.current = []
@@ -529,11 +556,14 @@ export default function MapScreen() {
         const id = data.id
         setSelPacId(id)
         const pac = pacientes.find((p: any) => (p.id_paciente ?? p.id) === id)
-        if (pac?.ultima_ubicacion) {
-          const lat = pac.ultima_ubicacion.latitud ?? pac.ultima_ubicacion.lat
-          const lng = pac.ultima_ubicacion.longitud ?? pac.ultima_ubicacion.lng
-          if (lat != null && lng != null) {
-            webViewRef.current?.injectJavaScript(`flyTo(${lat}, ${lng}); true;`)
+        if (pac) {
+          setModalPaciente(pac)
+          if (pac.ultima_ubicacion) {
+            const lat = pac.ultima_ubicacion.latitud ?? pac.ultima_ubicacion.lat
+            const lng = pac.ultima_ubicacion.longitud ?? pac.ultima_ubicacion.lng
+            if (lat != null && lng != null) {
+              webViewRef.current?.injectJavaScript(`flyTo(${lat}, ${lng}); true;`)
+            }
           }
         }
       }
@@ -596,6 +626,56 @@ export default function MapScreen() {
           </View>
         )}
       </TouchableOpacity>
+
+      <Modal
+        visible={!!modalPaciente}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalPaciente(null)}
+      >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setModalPaciente(null)}>
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.modalFotoRow}>
+                {modalPaciente?.foto ? (
+                  <Image source={{ uri: modalPaciente.foto }} style={styles.modalFoto} />
+                ) : (
+                  <View style={styles.modalFotoPlaceholder}>
+                    <Ionicons name="person" size={36} color="#6b7280" />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalNombre}>{modalPaciente?.nombre_paciente}</Text>
+                  {modalPaciente?.edad_paciente && (
+                    <Text style={styles.modalEdad}>{modalPaciente.edad_paciente} años</Text>
+                  )}
+                </View>
+              </View>
+
+              {[
+                { icon: 'medkit-outline',  label: 'Diagnóstico',  val: modalPaciente?.enfermedad },
+                { icon: 'card-outline',    label: 'Cédula',       val: modalPaciente?.cedula },
+                { icon: 'medical-outline', label: 'EPS',          val: modalPaciente?.eps },
+                { icon: 'people-outline',  label: 'Contacto',     val: modalPaciente?.familiar_nombre },
+                { icon: 'call-outline',    label: 'Teléfono',     val: modalPaciente?.familiar_telefono },
+              ].filter(r => r.val).map(row => (
+                <View key={row.label} style={styles.modalRow}>
+                  <Ionicons name={row.icon as any} size={16} color="#102e50" style={{ marginRight: 10, marginTop: 1 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.modalRowLabel}>{row.label}</Text>
+                    <Text style={styles.modalRowVal}>{row.val}</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity style={styles.modalClose} onPress={() => setModalPaciente(null)} activeOpacity={0.8}>
+              <Text style={styles.modalCloseText}>Cerrar</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       <TouchableOpacity
         style={[styles.viajeBtn, estadoViaje?.activo && styles.viajeBtnActive]}
@@ -732,4 +812,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+
+  modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet:     { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 32, maxHeight: '75%' },
+  modalHandle:    { width: 40, height: 4, borderRadius: 2, backgroundColor: '#e5e7eb', alignSelf: 'center', marginBottom: 16 },
+
+  modalFotoRow:        { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 },
+  modalFoto:           { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#102e50' },
+  modalFotoPlaceholder:{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#f3f4f6', borderWidth: 2, borderColor: '#e5e7eb', justifyContent: 'center', alignItems: 'center' },
+  modalNombre:         { fontSize: 18, fontWeight: '800', color: '#102e50', flexWrap: 'wrap' },
+  modalEdad:           { fontSize: 14, color: '#6b7280', marginTop: 2 },
+
+  modalRow:      { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
+  modalRowLabel: { fontSize: 11, color: '#9ca3af', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
+  modalRowVal:   { fontSize: 14, color: '#111827', fontWeight: '500', marginTop: 1 },
+
+  modalClose:     { marginTop: 20, backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  modalCloseText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 })

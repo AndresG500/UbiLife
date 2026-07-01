@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { useAuth } from '@/context/AuthContext'
-import { cuidadorService, familiarService } from '@/services/api'
+import { cuidadorService, familiarService, adminService } from '@/services/api'
 import { registrarToken } from '@/utils/notificaciones'
 import { Colors } from '@/constants/Colors'
 
@@ -31,46 +31,50 @@ export default function LoginScreen() {
     setLoading(true)
     setError('')
 
-    let data: any = null
-    let tipo: 'cuidador' | 'familiar' = 'cuidador'
+    const correo = email.trim().toLowerCase()
 
+    // ── 1. Intentar como cuidador ─────────────────────────────
     try {
-      const res = await cuidadorService.login(email.trim().toLowerCase(), password)
-      data = res.data
-      tipo = 'cuidador'
-    } catch {
-      try {
-        const res = await familiarService.login(email.trim().toLowerCase(), password)
-        data = res.data
-        tipo = 'familiar'
-      } catch (familiarErr: any) {
-        const status = familiarErr?.response?.status
-        if (status && status >= 500) {
-          setErrorEsServidor(true)
-          setError('Error en el servidor. Inténtalo más tarde.')
-        } else if (!status) {
-          setErrorEsServidor(false)
-          setError('Sin conexión. Verifica tu red e intenta de nuevo.')
-        } else {
-          setErrorEsServidor(false)
-          setError('Correo o contraseña incorrectos.')
-        }
-        setLoading(false)
-        return
+      const res  = await cuidadorService.login(correo, password)
+      const data = res.data
+      await login(data.token ?? data.access_token, data.cuidador ?? { email: correo }, 'cuidador')
+      registrarToken().catch(() => {})
+      router.replace('/(app)')
+      return
+    } catch {}
+
+    // ── 2. Intentar como familiar ─────────────────────────────
+    try {
+      const res  = await familiarService.login(correo, password)
+      const data = res.data
+      await login(data.token ?? data.access_token, data.familiar ?? { email: correo }, 'familiar')
+      registrarToken().catch(() => {})
+      router.replace('/(app)')
+      return
+    } catch {}
+
+    // ── 3. Intentar como administrador ────────────────────────
+    try {
+      const res  = await adminService.login(correo, password)
+      const data = res.data
+      await login(data.token ?? data.access_token, { email: correo, name: data.admin?.nombre }, 'admin')
+      router.replace('/(admin)' as any)
+      return
+    } catch (adminErr: any) {
+      const status = adminErr?.response?.status
+      if (status && status >= 500) {
+        setErrorEsServidor(true)
+        setError('Error en el servidor. Inténtalo más tarde.')
+      } else if (!status) {
+        setErrorEsServidor(false)
+        setError('Sin conexión. Verifica tu red e intenta de nuevo.')
+      } else {
+        setErrorEsServidor(false)
+        setError('Correo o contraseña incorrectos.')
       }
     }
 
-    try {
-      const token    = data.token ?? data.access_token ?? data.jwt
-      const cuidador = data.cuidador ?? data.familiar ?? { email: email.trim() }
-      await login(token, cuidador, data.tipo ?? tipo)
-      registrarToken().catch(() => {})
-      router.replace('/(app)')
-    } catch {
-      setError('Error inesperado al iniciar sesión.')
-    } finally {
-      setLoading(false)
-    }
+    setLoading(false)
   }
 
   return (

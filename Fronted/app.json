@@ -39,6 +39,13 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "UbiLife necesita acceso a tus fotos para agregar la foto del paciente.",
+          "cameraPermission": "UbiLife necesita acceso a la cámara para tomar la foto del paciente."
+        }
+      ],
       "expo-web-browser",
       [
         "expo-notifications",
