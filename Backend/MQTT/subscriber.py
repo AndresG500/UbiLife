@@ -25,11 +25,17 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
 
     db = get_database()
 
-    # ── 1. Verificar si el dispositivo ya está en la colección principal ──────
+    # ── 1. Dispositivo bloqueado por el admin → ignorar por completo ──────────
+    #       Evita que reaparezca en DispositivosDisponibles y detiene el
+    #       procesamiento de ubicación/alertas si ya estaba vinculado.
+    if await db["DispositivosBloqueados"].find_one({"id_dispositivo": id_dispositivo}):
+        return
+
+    # ── 2. Verificar si el dispositivo ya está en la colección principal ──────
     dispositivo = await db["Dispositivos"].find_one({"id_dispositivo": id_dispositivo})
 
     if not dispositivo:
-        # ── 2. No está vinculado aún → anunciarlo en DispositivosDisponibles ──
+        # ── 3. No está vinculado aún → anunciarlo en DispositivosDisponibles ──
         #       Usamos upsert para no duplicar si ya estaba anunciado.
         #       Actualizamos dispositivo_detectado para refrescar la ventana de 5 min.
         result = await db["DispositivosDisponibles"].update_one(
@@ -53,7 +59,7 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
         # No hay paciente asociado todavía → no hay nada más que procesar
         return
 
-    # ── 3. El dispositivo existe en Dispositivos → actualizar última conexión ─
+    # ── 4. El dispositivo existe en Dispositivos → actualizar última conexión ─
     await db["Dispositivos"].update_one(
         {"id_dispositivo": id_dispositivo},
         {"$set": {"ultima_conexion": datetime.now(timezone.utc)}},
@@ -71,7 +77,7 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
         Logger.add_to_log("warn", f"Dispositivo {id_dispositivo} sin paciente asignado")
         return
 
-    # ── 4. Construir y guardar la ubicación en el historial ───────────────────
+    # ── 5. Construir y guardar la ubicación en el historial ───────────────────
     try:
         datos = HistorialUbicacionBase(
             paciente_id=str(paciente_id),
@@ -93,7 +99,7 @@ async def procesar_mensaje_gps(id_dispositivo: str, payload: dict) -> None:
         f"GPS guardado | dispositivo={id_dispositivo} paciente={paciente_id} lat={lat} lng={lng}",
     )
 
-    # ── 5. Evaluar alertas (geocercas + modo viaje + anomalía velocidad) ────────
+    # ── 6. Evaluar alertas (geocercas + modo viaje + anomalía velocidad) ────────
     try:
         await procesar_ubicacion_paciente(str(paciente_id), float(lat), float(lng))
     except Exception as ex:

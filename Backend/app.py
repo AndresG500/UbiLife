@@ -22,6 +22,7 @@ from routes.ruta_alerta import router as alerta_router
 from routes.ruta_familiar import router as familiar_router
 from routes.ruta_modo_viaje import router as modo_viaje_router
 from routes.ruta_admin import router as admin_router
+from routes.ruta_reporte import router as reporte_router
 from services.service_alerta import reenviar_alertas_activas, verificar_senal_perdida
 from utils.Logger import Logger
 from security.limiter import limiter
@@ -182,6 +183,7 @@ app.include_router(alerta_router)
 app.include_router(familiar_router)
 app.include_router(modo_viaje_router)
 app.include_router(admin_router)
+app.include_router(reporte_router)
 
 
 @app.get("/")

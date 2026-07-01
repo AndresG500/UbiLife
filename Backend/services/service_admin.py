@@ -1,7 +1,7 @@
 import os
 import asyncio
 import bcrypt
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from bson import ObjectId
 from database.database import get_database
 from models.model_admin import CrearAdmin
@@ -184,9 +184,8 @@ async def listar_dispositivos_admin():
         disponibles = []
         async for d in db["DispositivosDisponibles"].find({}):
             disponibles.append({
-                "id_dispositivo":      d["id_dispositivo"],
-                "detectado_en":        d.get("dispositivo_detectado"),
-                "registrado_por_admin": d.get("registrado_por_admin", False),
+                "id_dispositivo": d["id_dispositivo"],
+                "detectado_en":   d.get("dispositivo_detectado"),
             })
 
         bloqueados = []
@@ -205,32 +204,6 @@ async def listar_dispositivos_admin():
     except Exception as ex:
         Logger.add_to_log("error", f"Error listando dispositivos (admin): {ex}")
         return {"error": "No se pudieron obtener los dispositivos"}
-
-
-async def registrar_dispositivo_admin(id_dispositivo: str):
-    try:
-        db = get_database()
-
-        if await db["DispositivosBloqueados"].find_one({"id_dispositivo": id_dispositivo}):
-            return {"error": "El dispositivo está bloqueado y no puede registrarse"}
-
-        await db["DispositivosDisponibles"].update_one(
-            {"id_dispositivo": id_dispositivo},
-            {
-                "$set": {
-                    "id_dispositivo":        id_dispositivo,
-                    "dispositivo_detectado": datetime.now(timezone.utc),
-                    "registrado_por_admin":  True,
-                },
-                "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
-            },
-            upsert=True,
-        )
-        Logger.add_to_log("info", f"Dispositivo pre-registrado por admin: {id_dispositivo}")
-        return {"mensaje": f"Dispositivo {id_dispositivo} registrado y disponible para vinculación"}
-    except Exception as ex:
-        Logger.add_to_log("error", f"Error registrando dispositivo (admin): {ex}")
-        return {"error": "No se pudo registrar el dispositivo"}
 
 
 async def bloquear_dispositivo(id_dispositivo: str):
@@ -260,28 +233,90 @@ async def bloquear_dispositivo(id_dispositivo: str):
         return {"error": "No se pudo actualizar el estado del dispositivo"}
 
 
+# ─── Gestión de reportes ──────────────────────────────────────────────────────
+
+def _serializar_reporte(r: dict) -> dict:
+    return {
+        "id":                str(r["_id"]),
+        "remitente_nombre":  r.get("remitente_nombre"),
+        "remitente_tipo":    r.get("remitente_tipo"),
+        "descripcion":       r.get("descripcion"),
+        "id_dispositivo":    r.get("id_dispositivo"),
+        "creado_en":         r.get("creado_en"),
+        "actualizado_en":    r.get("actualizado_en"),
+    }
+
+
+async def listar_reportes_admin():
+    try:
+        db = get_database()
+
+        recibidos, en_revision, solucionados = [], [], []
+        async for r in db["Reportes"].find({}).sort("creado_en", -1):
+            item = _serializar_reporte(r)
+            if r.get("estado") == "recibido":
+                recibidos.append(item)
+            elif r.get("estado") == "en_revision":
+                en_revision.append(item)
+            elif r.get("estado") == "solucionado":
+                solucionados.append(item)
+
+        return {
+            "recibidos":    recibidos,
+            "en_revision":  en_revision,
+            "solucionados": solucionados,
+        }
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error listando reportes (admin): {ex}")
+        return {"error": "No se pudieron obtener los reportes"}
+
+
+async def cambiar_estado_reporte(reporte_id: str, estado: str):
+    try:
+        db = get_database()
+        try:
+            reporte_oid = ObjectId(reporte_id)
+        except Exception:
+            return {"error": "ID de reporte inválido"}
+
+        resultado = await db["Reportes"].update_one(
+            {"_id": reporte_oid},
+            {"$set": {"estado": estado, "actualizado_en": datetime.now(timezone.utc)}},
+        )
+        if resultado.matched_count == 0:
+            return {"error": "Reporte no encontrado"}
+
+        Logger.add_to_log("info", f"Reporte {reporte_id} actualizado a estado '{estado}'")
+        return {"mensaje": "Estado del reporte actualizado", "estado": estado}
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error cambiando estado de reporte: {ex}")
+        return {"error": "No se pudo actualizar el reporte"}
+
+
 # ─── Dashboard ────────────────────────────────────────────────────────────────
 
 async def obtener_estadisticas():
     try:
-        db       = get_database()
-        hace_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+        db = get_database()
 
         total_cuidadores      = await db["Cuidadores"].count_documents({})
         cuidadores_activos    = await db["Cuidadores"].count_documents({"activo": True})
         total_familiares      = await db["Familiares"].count_documents({})
+        familiares_activos    = await db["Familiares"].count_documents({"activo": True})
         total_pacientes       = await db["Pacientes"].count_documents({})
         pacientes_activos     = await db["Pacientes"].count_documents({"activo": True})
         disp_vinculados       = await db["Dispositivos"].count_documents({"paciente_id": {"$ne": None}})
         disp_libres           = await db["Dispositivos"].count_documents({"paciente_id": None})
         disp_disponibles      = await db["DispositivosDisponibles"].count_documents({})
         disp_bloqueados       = await db["DispositivosBloqueados"].count_documents({})
-        alertas_24h           = await db["Alertas"].count_documents({"timestamp": {"$gte": hace_24h}})
-        alertas_pendientes    = await db["Alertas"].count_documents({"estado": {"$in": ["pendiente", "enviada"]}})
+        reportes_recibidos    = await db["Reportes"].count_documents({"estado": "recibido"})
+        reportes_en_revision  = await db["Reportes"].count_documents({"estado": "en_revision"})
 
         return {
-            "cuidadores":  {"total": total_cuidadores, "activos": cuidadores_activos},
-            "familiares":  {"total": total_familiares},
+            "usuarios": {
+                "total":   total_cuidadores + total_familiares,
+                "activos": cuidadores_activos + familiares_activos,
+            },
             "pacientes":   {"total": total_pacientes, "activos": pacientes_activos},
             "dispositivos": {
                 "vinculados":   disp_vinculados,
@@ -289,9 +324,9 @@ async def obtener_estadisticas():
                 "disponibles":  disp_disponibles,
                 "bloqueados":   disp_bloqueados,
             },
-            "alertas": {
-                "ultimas_24h": alertas_24h,
-                "pendientes":  alertas_pendientes,
+            "reportes": {
+                "recibidos":   reportes_recibidos,
+                "en_revision": reportes_en_revision,
             },
         }
     except Exception as ex:

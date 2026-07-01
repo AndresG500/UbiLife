@@ -36,7 +36,3 @@ class RespuestaAdmin(BaseModel):
 
 class CambiarEstadoCuenta(BaseModel):
     activo: bool
-
-
-class IdDispositivoBody(BaseModel):
-    id_dispositivo: str = Field(..., min_length=1, max_length=64)

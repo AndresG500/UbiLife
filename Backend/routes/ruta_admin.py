@@ -1,6 +1,7 @@
 from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends, Path, Request
-from models.model_admin import CrearAdmin, LoginAdmin, CambiarEstadoCuenta, IdDispositivoBody
+from models.model_admin import CrearAdmin, LoginAdmin, CambiarEstadoCuenta
+from models.model_reporte import CambiarEstadoReporte
 from services import service_admin
 from services.service_auth import revocar_token
 from security.dependencies import get_admin_actual, oauth2_scheme
@@ -119,17 +120,6 @@ async def listar_dispositivos(admin_actual = Depends(get_admin_actual)):
     return resultado
 
 
-@router.post("/dispositivos", summary="Pre-registrar dispositivo ESP32 en el inventario")
-async def registrar_dispositivo(
-    datos: IdDispositivoBody,
-    admin_actual = Depends(get_admin_actual),
-):
-    resultado = await service_admin.registrar_dispositivo_admin(datos.id_dispositivo)
-    if "error" in resultado:
-        raise HTTPException(status_code=400, detail=resultado["error"])
-    return resultado
-
-
 @router.patch("/dispositivos/{id_dispositivo}/bloquear", summary="Bloquear o desbloquear un dispositivo")
 async def bloquear_dispositivo(
     id_dispositivo: str,
@@ -138,4 +128,27 @@ async def bloquear_dispositivo(
     resultado = await service_admin.bloquear_dispositivo(id_dispositivo)
     if "error" in resultado:
         raise HTTPException(status_code=400, detail=resultado["error"])
+    return resultado
+
+
+# ─── Gestión de reportes ──────────────────────────────────────────────────────
+
+@router.get("/reportes")
+async def listar_reportes(admin_actual = Depends(get_admin_actual)):
+    resultado = await service_admin.listar_reportes_admin()
+    if isinstance(resultado, dict) and "error" in resultado:
+        raise HTTPException(status_code=500, detail=resultado["error"])
+    return resultado
+
+
+@router.patch("/reportes/{reporte_id}/estado", summary="Cambiar el estado de un reporte")
+async def cambiar_estado_reporte(
+    reporte_id: MongoId,
+    datos: CambiarEstadoReporte,
+    admin_actual = Depends(get_admin_actual),
+):
+    resultado = await service_admin.cambiar_estado_reporte(reporte_id, datos.estado)
+    if "error" in resultado:
+        code = 404 if "no encontrado" in resultado["error"].lower() else 400
+        raise HTTPException(status_code=code, detail=resultado["error"])
     return resultado
