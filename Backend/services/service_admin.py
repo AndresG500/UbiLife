@@ -293,6 +293,28 @@ async def cambiar_estado_reporte(reporte_id: str, estado: str):
         return {"error": "No se pudo actualizar el reporte"}
 
 
+async def eliminar_reporte(reporte_id: str):
+    try:
+        db = get_database()
+        try:
+            reporte_oid = ObjectId(reporte_id)
+        except Exception:
+            return {"error": "ID de reporte inválido"}
+
+        reporte = await db["Reportes"].find_one({"_id": reporte_oid})
+        if not reporte:
+            return {"error": "Reporte no encontrado"}
+        if reporte.get("estado") != "solucionado":
+            return {"error": "Solo se pueden eliminar reportes solucionados"}
+
+        await db["Reportes"].delete_one({"_id": reporte_oid})
+        Logger.add_to_log("info", f"Reporte {reporte_id} eliminado")
+        return {"mensaje": "Reporte eliminado exitosamente"}
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error eliminando reporte: {ex}")
+        return {"error": "No se pudo eliminar el reporte"}
+
+
 # ─── Dashboard ────────────────────────────────────────────────────────────────
 
 async def obtener_estadisticas():

@@ -152,3 +152,15 @@ async def cambiar_estado_reporte(
         code = 404 if "no encontrado" in resultado["error"].lower() else 400
         raise HTTPException(status_code=code, detail=resultado["error"])
     return resultado
+
+
+@router.delete("/reportes/{reporte_id}", summary="Eliminar un reporte ya solucionado")
+async def eliminar_reporte(
+    reporte_id: MongoId,
+    admin_actual = Depends(get_admin_actual),
+):
+    resultado = await service_admin.eliminar_reporte(reporte_id)
+    if "error" in resultado:
+        code = 404 if "no encontrado" in resultado["error"].lower() else 400
+        raise HTTPException(status_code=code, detail=resultado["error"])
+    return resultado
