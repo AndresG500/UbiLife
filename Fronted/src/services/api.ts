@@ -243,6 +243,8 @@ export const adminService = {
 
   cambiarEstadoReporte: (id: string, estado: 'recibido' | 'en_revision' | 'solucionado') =>
     api.patch(`/admin/reportes/${id}/estado`, { estado }),
+
+  eliminarReporte: (id: string) => api.delete(`/admin/reportes/${id}`),
 }
 
 export default api

@@ -37,11 +37,12 @@ const ESTADO_CONFIG: Record<Estado, { label: string; color: string; bg: string; 
 }
 
 function ReporteCard({
-  item, estado, onCambiarEstado, procesando,
+  item, estado, onCambiarEstado, onEliminar, procesando,
 }: {
   item: Reporte
   estado: Estado
   onCambiarEstado: (id: string, nuevoEstado: Estado) => void
+  onEliminar: (id: string) => void
   procesando: string | null
 }) {
   const cfg = ESTADO_CONFIG[estado]
@@ -83,40 +84,34 @@ function ReporteCard({
         <Text style={styles.fechaText}>{formatFecha(item.creado_en)}</Text>
       </View>
 
-      <TouchableOpacity
-        style={[styles.accionBtn, procesando === item.id && { opacity: 0.6 }]}
-        onPress={() => onCambiarEstado(item.id, siguienteAccion.destino)}
-        disabled={procesando === item.id}
-        activeOpacity={0.85}
-      >
-        {procesando === item.id ? (
-          <ActivityIndicator size="small" color={Colors.primary} />
-        ) : (
-          <>
-            <Ionicons name={siguienteAccion.icon} size={15} color={Colors.primary} style={{ marginRight: 6 }} />
-            <Text style={styles.accionBtnText}>{siguienteAccion.label}</Text>
-          </>
+      <View style={styles.accionesRow}>
+        <TouchableOpacity
+          style={[styles.accionBtn, { flex: 1, marginTop: 0 }, procesando === item.id && { opacity: 0.6 }]}
+          onPress={() => onCambiarEstado(item.id, siguienteAccion.destino)}
+          disabled={procesando === item.id}
+          activeOpacity={0.85}
+        >
+          {procesando === item.id ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <>
+              <Ionicons name={siguienteAccion.icon} size={15} color={Colors.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.accionBtnText}>{siguienteAccion.label}</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        {estado === 'solucionado' && (
+          <TouchableOpacity
+            style={[styles.eliminarBtn, procesando === item.id && { opacity: 0.6 }]}
+            onPress={() => onEliminar(item.id)}
+            disabled={procesando === item.id}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="trash-outline" size={18} color={Colors.error} />
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
+      </View>
     </View>
-  )
-}
-
-function SeccionReportes({
-  titulo, items, estado, onCambiarEstado, procesando,
-}: {
-  titulo: string; items: Reporte[]; estado: Estado
-  onCambiarEstado: (id: string, nuevoEstado: Estado) => void
-  procesando: string | null
-}) {
-  if (items.length === 0) return null
-  return (
-    <>
-      <Text style={styles.seccionLabel}>{titulo} ({items.length})</Text>
-      {items.map(item => (
-        <ReporteCard key={item.id} item={item} estado={estado} onCambiarEstado={onCambiarEstado} procesando={procesando} />
-      ))}
-    </>
   )
 }
 
@@ -126,6 +121,7 @@ export default function AdminReportesScreen() {
   const [loading,   setLoading]     = useState(true)
   const [error,     setError]       = useState('')
   const [procesando,setProcesando]  = useState<string | null>(null)
+  const [tab,       setTab]         = useState<Estado>('recibido')
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -163,9 +159,36 @@ export default function AdminReportesScreen() {
     ])
   }
 
+  const handleEliminar = (id: string) => {
+    Alert.alert('Eliminar reporte', '¿Seguro que quieres eliminar este reporte? Esta acción no se puede deshacer.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          setProcesando(id)
+          try {
+            await adminService.eliminarReporte(id)
+            await cargar()
+          } catch {
+            Alert.alert('Error', 'No se pudo eliminar el reporte.')
+          } finally {
+            setProcesando(null)
+          }
+        },
+      },
+    ])
+  }
+
   const total = reportes
     ? reportes.recibidos.length + reportes.en_revision.length + reportes.solucionados.length
     : 0
+
+  const itemsPorTab: Record<Estado, Reporte[]> = {
+    recibido:    reportes?.recibidos    ?? [],
+    en_revision: reportes?.en_revision  ?? [],
+    solucionado: reportes?.solucionados ?? [],
+  }
 
   return (
     <AnimatedScreen>
@@ -176,6 +199,21 @@ export default function AdminReportesScreen() {
             <Ionicons name="arrow-back" size={22} color={Colors.white} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Reportes</Text>
+        </View>
+
+        <View style={styles.filtrosRow}>
+          {(['recibido', 'en_revision', 'solucionado'] as const).map((e) => (
+            <TouchableOpacity
+              key={e}
+              style={[styles.chip, tab === e && styles.chipActive]}
+              onPress={() => setTab(e)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.chipText, tab === e && styles.chipTextActive]}>
+                {ESTADO_CONFIG[e].label} ({itemsPorTab[e].length})
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         <ScrollView
@@ -202,13 +240,24 @@ export default function AdminReportesScreen() {
                 Los problemas reportados por cuidadores y familiares aparecerán aquí.
               </Text>
             </View>
-          ) : reportes ? (
-            <>
-              <SeccionReportes titulo="Llegadas"      items={reportes.recibidos}    estado="recibido"    onCambiarEstado={handleCambiarEstado} procesando={procesando} />
-              <SeccionReportes titulo="En revisión"    items={reportes.en_revision}  estado="en_revision"  onCambiarEstado={handleCambiarEstado} procesando={procesando} />
-              <SeccionReportes titulo="Solucionadas"   items={reportes.solucionados} estado="solucionado"  onCambiarEstado={handleCambiarEstado} procesando={procesando} />
-            </>
-          ) : null}
+          ) : itemsPorTab[tab].length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Ionicons name="checkmark-done-outline" size={52} color={Colors.border} />
+              <Text style={styles.emptyTitle}>Sin reportes aquí</Text>
+              <Text style={styles.emptyDesc}>No hay reportes en "{ESTADO_CONFIG[tab].label}".</Text>
+            </View>
+          ) : (
+            itemsPorTab[tab].map((item) => (
+              <ReporteCard
+                key={item.id}
+                item={item}
+                estado={tab}
+                onCambiarEstado={handleCambiarEstado}
+                onEliminar={handleEliminar}
+                procesando={procesando}
+              />
+            ))
+          )}
         </ScrollView>
 
       </SafeAreaView>
@@ -228,10 +277,14 @@ const styles = StyleSheet.create({
   backBtn:     { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', color: Colors.white },
 
-  seccionLabel: {
-    fontSize: 11, fontWeight: '700', color: Colors.textSecondary,
-    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 4,
+  filtrosRow: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: 16,
+    paddingVertical: 12, backgroundColor: '#102e50',
   },
+  chip:          { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)' },
+  chipActive:    { backgroundColor: Colors.white },
+  chipText:      { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
+  chipTextActive:{ color: '#102e50' },
 
   card: {
     backgroundColor: Colors.white, borderRadius: 20, padding: 16, marginBottom: 12,
@@ -258,12 +311,17 @@ const styles = StyleSheet.create({
   fechaFila: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   fechaText: { fontSize: 12, color: Colors.textSecondary },
 
+  accionesRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   accionBtn: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
     borderRadius: 10, paddingVertical: 9, marginTop: 12, borderWidth: 1.5,
     borderColor: Colors.primaryPale, backgroundColor: Colors.primaryBg,
   },
   accionBtnText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  eliminarBtn: {
+    width: 44, justifyContent: 'center', alignItems: 'center',
+    borderRadius: 10, borderWidth: 1.5, borderColor: '#fecaca', backgroundColor: '#fef2f2',
+  },
 
   emptyWrap:  { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, marginTop: 16, marginBottom: 8 },

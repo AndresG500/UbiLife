@@ -31,6 +31,26 @@ function escaparJs(s: string): string {
     .replace(/\r/g, '\\r')
 }
 
+// Debe coincidir con GPS_TIMEOUT_MS de useSSEUbicacion.ts (umbral de "sin señal")
+const GPS_TIMEOUT_MS = 60_000
+
+function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function estaDentroDeZonaSegura(lat: number, lng: number, pacienteId: string, zonas: any[]): boolean {
+  return zonas.some((z) => {
+    if (z.paciente_id !== pacienteId || !z.activa || !z.centro) return false
+    const d = distanciaMetros(lat, lng, z.centro.latitud, z.centro.longitud)
+    return d <= (z.radio_metros ?? 150)
+  })
+}
+
 function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuidador[] = [], familiares: UbicacionFamiliar[] = [], fallbackLat = 11.2404, fallbackLng = -74.211): string {
   const zonesJs = zonas.map((zona) => {
     const lat   = zona.centro?.latitud  ?? 0
@@ -58,10 +78,16 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
     if (!ub) return ''
     const lat = ub.latitud  ?? ub.lat  ?? 0
     const lng = ub.longitud ?? ub.lng  ?? 0
+    const tsMs = ub.timestamp ? new Date(ub.timestamp).getTime() : 0
+    const esObsoleta   = !tsMs || (Date.now() - tsMs) > GPS_TIMEOUT_MS
+    const dentroDeZona = estaDentroDeZonaSegura(lat, lng, id, zonas)
+    const offline      = esObsoleta && !dentroDeZona
+    const iconFn = offline ? 'crearIconoPacienteOffline' : 'crearIconoPaciente'
     return `
       (function() {
         pacienteNames['${id}'] = '${nombre}';
-        var m = L.marker([${lat}, ${lng}], { icon: crearIconoPaciente('${nombre}') }).addTo(map);
+        var m = L.marker([${lat}, ${lng}], { icon: ${iconFn}('${nombre}') }).addTo(map);
+        ${offline ? `showSignalLostCircle(${lat}, ${lng});` : ''}
         m.on('click', function() {
           window.ReactNativeWebView.postMessage(JSON.stringify({tipo:'select_paciente',id:'${id}'}));
         });
@@ -467,8 +493,12 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (!mapaListo.current || !selPacId) return
-    if (!gpsActivo && ubicacion) {
-      const js = `showSignalLostCircle(${ubicacion.latitude}, ${ubicacion.longitude}); setMarkerOffline('${selPacId}'); true;`
+    const sinSenal = !gpsActivo && !!ubicacion
+    const dentroDeZona = sinSenal
+      ? estaDentroDeZonaSegura(ubicacion!.latitude, ubicacion!.longitude, selPacId, zonasRef.current)
+      : false
+    if (sinSenal && !dentroDeZona) {
+      const js = `showSignalLostCircle(${ubicacion!.latitude}, ${ubicacion!.longitude}); setMarkerOffline('${selPacId}'); true;`
       webViewRef.current?.injectJavaScript(js)
     } else {
       webViewRef.current?.injectJavaScript(`hideSignalLostCircle(); setMarkerOnline('${selPacId}'); true;`)
