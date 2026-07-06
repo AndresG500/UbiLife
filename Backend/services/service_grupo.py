@@ -300,6 +300,7 @@ async def obtener_ubicaciones_grupo(grupo_id: str, cuidador_solicitante_id: str)
         db              = get_database()
         col_grupos      = db["Grupos"]
         col_ubicaciones = db["UbicacionesCuidadores"]
+        col_cuidadores  = db["Cuidadores"]
         col_pacientes   = db["Pacientes"]
 
         grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
@@ -311,10 +312,19 @@ async def obtener_ubicaciones_grupo(grupo_id: str, cuidador_solicitante_id: str)
             Logger.add_to_log("warn", f"Cuidador {cuidador_solicitante_id} no pertenece al grupo {grupo_id}")
             return {"error": "No tienes permiso para ver las ubicaciones de este grupo"}
 
-        # Ubicaciones de cuidadores
+        # Ubicaciones de cuidadores (enriquecidas con su perfil para el mapa)
         ubicaciones_cuidadores = []
         async for ub in col_ubicaciones.find({"cuidador_id": {"$in": grupo["cuidador_ids"]}}):
             ub.pop("_id", None)
+            ub["tipo"] = "cuidador"
+            try:
+                perfil = await col_cuidadores.find_one({"_id": ObjectId(ub["cuidador_id"])})
+                if perfil:
+                    ub["nombre"]   = perfil.get("name", "")
+                    ub["telefono"] = perfil.get("phone")
+                    ub["foto"]     = perfil.get("foto")
+            except Exception:
+                pass
             ubicaciones_cuidadores.append(ub)
 
         # Ultima ubicacion de cada paciente
@@ -517,6 +527,8 @@ async def obtener_ubicaciones_grupo_familiar(grupo_id: str, familiar_solicitante
         col_grupos        = db["Grupos"]
         col_ub_cuidadores = db["UbicacionesCuidadores"]
         col_ub_familiares = db["UbicacionesFamiliares"]
+        col_cuidadores    = db["Cuidadores"]
+        col_familiares    = db["Familiares"]
         col_pacientes     = db["Pacientes"]
 
         grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
@@ -529,11 +541,29 @@ async def obtener_ubicaciones_grupo_familiar(grupo_id: str, familiar_solicitante
         ubicaciones_cuidadores = []
         async for ub in col_ub_cuidadores.find({"cuidador_id": {"$in": grupo["cuidador_ids"]}}):
             ub.pop("_id", None)
+            ub["tipo"] = "cuidador"
+            try:
+                perfil = await col_cuidadores.find_one({"_id": ObjectId(ub["cuidador_id"])})
+                if perfil:
+                    ub["nombre"]   = perfil.get("name", "")
+                    ub["telefono"] = perfil.get("phone")
+                    ub["foto"]     = perfil.get("foto")
+            except Exception:
+                pass
             ubicaciones_cuidadores.append(ub)
 
         ubicaciones_familiares = []
         async for ub in col_ub_familiares.find({"familiar_id": {"$in": grupo.get("familiar_ids", [])}}):
             ub.pop("_id", None)
+            ub["tipo"] = "familiar"
+            try:
+                perfil = await col_familiares.find_one({"_id": ObjectId(ub["familiar_id"])})
+                if perfil:
+                    ub["nombre"]   = perfil.get("name", "")
+                    ub["telefono"] = perfil.get("phone")
+                    ub["foto"]     = perfil.get("foto")
+            except Exception:
+                pass
             ubicaciones_familiares.append(ub)
 
         ubicaciones_pacientes = []

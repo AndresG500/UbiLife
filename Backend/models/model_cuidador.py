@@ -8,6 +8,7 @@ class CuidadorBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr = Field(..., max_length=254)
     phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
+    foto: Optional[str] = Field(None, max_length=3_000_000)
     fcm_token: Optional[str] = Field(None, max_length=512)
 
     @field_validator('name', mode='before')
@@ -32,6 +33,7 @@ class RespuestaCuidador(CuidadorBase):
 class ActualizarCuidador(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=100)
     phone: Optional[str] = Field(None, pattern=r"^\+?[0-9]{7,15}$")
+    foto: Optional[str] = Field(None, max_length=3_000_000)
     password: Optional[str] = Field(None, min_length=8)
 
 class VerificarCuidador(BaseModel):

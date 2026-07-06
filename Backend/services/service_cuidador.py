@@ -30,6 +30,7 @@ async def registrar_cuidador(datos: CrearCuidador):
             "email":   datos.email,
             "password": hashed,
             "phone":  datos.phone,
+            "foto":   datos.foto,
             "patient_ids": [],
             "activo": True,
             "fecha_creacion": datetime.now(timezone.utc),
@@ -107,6 +108,8 @@ async def actualizar_cuidador(email: str, datos: ActualizarCuidador, email_solic
             campos["name"] = datos.name
         if datos.phone:
             campos["phone"] = datos.phone
+        if datos.foto is not None:
+            campos["foto"] = datos.foto
         if datos.password:
             campos["password"] = bcrypt.hashpw(
                 datos.password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
@@ -156,6 +159,7 @@ async def verificar_cuidador(email: str, password: str):
                 "name":  cuidador.get("name", ""),
                 "email": cuidador.get("email", ""),
                 "phone": cuidador.get("phone", ""),
+                "foto":  cuidador.get("foto"),
             },
         }
 

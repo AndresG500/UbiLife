@@ -40,6 +40,7 @@ async def registrar_familiar(datos: CrearFamiliar):
             "email":      datos.email,
             "password":   hashed,
             "phone":      datos.phone,
+            "foto":       datos.foto,
             "grupo_ids":  [grupo_id] if grupo_id else [],
             "activo":     True,
             "created_at": datetime.now(timezone.utc),
@@ -92,6 +93,7 @@ async def verificar_familiar(email: str, password: str):
                 "name":  familiar.get("name", ""),
                 "email": familiar.get("email", ""),
                 "phone": familiar.get("phone", ""),
+                "foto":  familiar.get("foto"),
             },
         }
 
