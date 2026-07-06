@@ -97,22 +97,30 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
 
   const cuidadorMarkersJs = cuidadores
     .filter((c) => c.latitud && c.longitud)
-    .map((c) => `
+    .map((c) => {
+      const datos = JSON.stringify({ nombre: c.nombre ?? 'Cuidador', telefono: c.telefono ?? '', foto: c.foto ?? '', tipo: 'cuidador' })
+      return `
       (function() {
+        personaData['${c.cuidador_id}'] = ${datos};
         var m = L.marker([${c.latitud}, ${c.longitud}], { icon: cuidadorIcon }).addTo(map);
-        m.bindPopup('Cuidador');
+        bindPersonaClick(m, '${c.cuidador_id}');
         cuidadorMarkers['${c.cuidador_id}'] = m;
-      })();`)
+      })();`
+    })
     .join('\n')
 
   const familiarMarkersJs = familiares
     .filter((f) => f.latitud && f.longitud)
-    .map((f) => `
+    .map((f) => {
+      const datos = JSON.stringify({ nombre: f.nombre ?? 'Familiar', telefono: f.telefono ?? '', foto: f.foto ?? '', tipo: 'familiar' })
+      return `
       (function() {
+        personaData['${f.familiar_id}'] = ${datos};
         var m = L.marker([${f.latitud}, ${f.longitud}], { icon: familiarIcon }).addTo(map);
-        m.bindPopup('Familiar');
+        bindPersonaClick(m, '${f.familiar_id}');
         familiarMarkers['${f.familiar_id}'] = m;
-      })();`)
+      })();`
+    })
     .join('\n')
 
   return `<!DOCTYPE html>
@@ -145,6 +153,14 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
     var familiarMarkers = {};
     var zoneCircles = {};
     var pacienteNames = {};
+    var personaData = {};
+
+    function bindPersonaClick(m, id) {
+      m.on('click', function() {
+        var d = personaData[id] || {};
+        window.ReactNativeWebView.postMessage(JSON.stringify({ tipo: 'select_persona', id: id, datos: d }));
+      });
+    }
 
     function htmlEncode(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -224,22 +240,24 @@ function buildMapHTML(pacientes: any[], zonas: any[], cuidadores: UbicacionCuida
       }
     }
 
-    function updateCuidador(id, lat, lng) {
+    function updateCuidador(id, lat, lng, datos) {
+      if (datos) personaData[id] = datos;
       if (cuidadorMarkers[id]) {
         cuidadorMarkers[id].setLatLng([lat, lng]);
       } else {
         var m = L.marker([lat, lng], { icon: cuidadorIcon }).addTo(map);
-        m.bindPopup('Cuidador');
+        bindPersonaClick(m, id);
         cuidadorMarkers[id] = m;
       }
     }
 
-    function updateFamiliar(id, lat, lng) {
+    function updateFamiliar(id, lat, lng, datos) {
+      if (datos) personaData[id] = datos;
       if (familiarMarkers[id]) {
         familiarMarkers[id].setLatLng([lat, lng]);
       } else {
         var m = L.marker([lat, lng], { icon: familiarIcon }).addTo(map);
-        m.bindPopup('Familiar');
+        bindPersonaClick(m, id);
         familiarMarkers[id] = m;
       }
     }
@@ -336,6 +354,7 @@ export default function MapScreen() {
   const mapaListo         = useRef(false)
   const [rutaVisible,   setRutaVisible]   = useState(false)
   const [modalPaciente, setModalPaciente] = useState<any | null>(null)
+  const [modalPersona,  setModalPersona]  = useState<any | null>(null)
 
   const { ubicacion, gpsActivo } = useSSEUbicacion(selPacId)
 
@@ -451,11 +470,13 @@ export default function MapScreen() {
           webViewRef.current?.injectJavaScript(js)
         }
         for (const c of todasUbicaciones) {
-          const js = `updateCuidador('${c.cuidador_id}', ${c.latitud}, ${c.longitud}); true;`
+          const datos = JSON.stringify({ nombre: c.nombre ?? 'Cuidador', telefono: c.telefono ?? '', foto: c.foto ?? '', tipo: 'cuidador' })
+          const js = `updateCuidador('${c.cuidador_id}', ${c.latitud}, ${c.longitud}, ${datos}); true;`
           webViewRef.current?.injectJavaScript(js)
         }
         for (const f of todasFamiliares) {
-          const js = `updateFamiliar('${f.familiar_id}', ${f.latitud}, ${f.longitud}); true;`
+          const datos = JSON.stringify({ nombre: f.nombre ?? 'Familiar', telefono: f.telefono ?? '', foto: f.foto ?? '', tipo: 'familiar' })
+          const js = `updateFamiliar('${f.familiar_id}', ${f.latitud}, ${f.longitud}, ${datos}); true;`
           webViewRef.current?.injectJavaScript(js)
         }
         if (tipoUsuario === 'familiar') {
@@ -522,7 +543,8 @@ export default function MapScreen() {
         enviarUbicacionCuidador(g.id, latitude, longitude)
       }
       const miId = cuidador?.id ?? 'yo'
-      const js = `updateCuidador('${miId}', ${latitude}, ${longitude}); true;`
+      const datos = JSON.stringify({ nombre: cuidador?.name ?? 'Tú', telefono: cuidador?.phone ?? '', foto: cuidador?.foto ?? '', tipo: 'cuidador' })
+      const js = `updateCuidador('${miId}', ${latitude}, ${longitude}, ${datos}); true;`
       webViewRef.current?.injectJavaScript(js)
     })
       .then((sub) => {
@@ -550,7 +572,8 @@ export default function MapScreen() {
         if (gId) enviarUbicacionFamiliar(gId, latitude, longitude)
       }
       const miId = cuidador?.id ?? 'yo_familiar'
-      const js = `updateFamiliar('${miId}', ${latitude}, ${longitude}); true;`
+      const datos = JSON.stringify({ nombre: cuidador?.name ?? 'Tú', telefono: cuidador?.phone ?? '', foto: cuidador?.foto ?? '', tipo: 'familiar' })
+      const js = `updateFamiliar('${miId}', ${latitude}, ${longitude}, ${datos}); true;`
       webViewRef.current?.injectJavaScript(js)
     })
       .then((sub) => {
@@ -582,6 +605,10 @@ export default function MapScreen() {
   const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data)
+      if (data.tipo === 'select_persona') {
+        setModalPersona(data.datos ?? {})
+        return
+      }
       if (data.tipo === 'select_paciente') {
         const id = data.id
         setSelPacId(id)
@@ -701,6 +728,57 @@ export default function MapScreen() {
             </ScrollView>
 
             <TouchableOpacity style={styles.modalClose} onPress={() => setModalPaciente(null)} activeOpacity={0.8}>
+              <Text style={styles.modalCloseText}>Cerrar</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={!!modalPersona}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalPersona(null)}
+      >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setModalPersona(null)}>
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalFotoRow}>
+              {modalPersona?.foto ? (
+                <Image source={{ uri: modalPersona.foto }} style={styles.modalFoto} />
+              ) : (
+                <View style={styles.modalFotoPlaceholder}>
+                  <Ionicons name={modalPersona?.tipo === 'familiar' ? 'heart' : 'shield-checkmark'} size={34} color="#6b7280" />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalNombre}>{modalPersona?.nombre || (modalPersona?.tipo === 'familiar' ? 'Familiar' : 'Cuidador')}</Text>
+                <View style={[styles.personaBadge, modalPersona?.tipo === 'familiar' ? styles.personaBadgeFam : styles.personaBadgeCui]}>
+                  <Ionicons
+                    name={modalPersona?.tipo === 'familiar' ? 'heart' : 'shield-checkmark'}
+                    size={12}
+                    color={modalPersona?.tipo === 'familiar' ? '#9333ea' : '#16a34a'}
+                  />
+                  <Text style={[styles.personaBadgeText, { color: modalPersona?.tipo === 'familiar' ? '#9333ea' : '#16a34a' }]}>
+                    {modalPersona?.tipo === 'familiar' ? 'Familiar' : 'Cuidador'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {modalPersona?.telefono ? (
+              <View style={styles.modalRow}>
+                <Ionicons name="call-outline" size={16} color="#102e50" style={{ marginRight: 10, marginTop: 1 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalRowLabel}>Teléfono</Text>
+                  <Text style={styles.modalRowVal}>{modalPersona.telefono}</Text>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.personaSinDatos}>Sin información de contacto disponible.</Text>
+            )}
+
+            <TouchableOpacity style={styles.modalClose} onPress={() => setModalPersona(null)} activeOpacity={0.8}>
               <Text style={styles.modalCloseText}>Cerrar</Text>
             </TouchableOpacity>
           </TouchableOpacity>
@@ -859,4 +937,10 @@ const styles = StyleSheet.create({
 
   modalClose:     { marginTop: 20, backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   modalCloseText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  personaBadge:     { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  personaBadgeCui:  { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
+  personaBadgeFam:  { backgroundColor: '#faf5ff', borderColor: '#e9d5ff' },
+  personaBadgeText: { fontSize: 12, fontWeight: '700' },
+  personaSinDatos:  { fontSize: 13, color: '#9ca3af', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
 })

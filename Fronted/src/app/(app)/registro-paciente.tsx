@@ -102,6 +102,7 @@ export default function RegistroPacienteScreen() {
   const [error,             setError]             = useState('')
 
   const [paso,                    setPaso]                    = useState<1 | 'buscando' | 2>(1)
+  const [editando,                setEditando]                = useState(false)
   const [pacienteId,              setPacienteId]              = useState('')
   const [dispositivos,            setDispositivos]            = useState<Dispositivo[]>([])
   const [dispositivoSeleccionado, setDispositivoSeleccionado] = useState<string | null>(null)
@@ -215,6 +216,23 @@ export default function RegistroPacienteScreen() {
     setLoading(true)
     setError('')
     try {
+      // Modo edición: el paciente ya existe (venimos del paso 2) → actualizar y volver a vincular
+      if (editando && pacienteId) {
+        await pacienteService.actualizar(pacienteId, {
+          nombre_paciente:   nombre_paciente.trim(),
+          edad_paciente:     edadNum,
+          enfermedad:        enfermedad.trim(),
+          cedula:            cedula.trim(),
+          eps:               eps.trim(),
+          familiar_nombre:   familiar_nombre.trim(),
+          familiar_telefono: familiar_telefono.trim(),
+          ...(foto ? { foto } : {}),
+        })
+        setEditando(false)
+        setPaso(2)
+        return
+      }
+
       const res = await pacienteService.registrar({
         nombre_paciente:   nombre_paciente.trim(),
         edad_paciente:     edadNum,
@@ -346,11 +364,12 @@ export default function RegistroPacienteScreen() {
                 )}
 
                 <TouchableOpacity
-                  style={styles.skipBtn}
-                  onPress={() => router.replace('/(app)/pacientes')}
+                  style={styles.volverFormBtn}
+                  onPress={() => { setEditando(true); setPaso(1) }}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.skipText}>Omitir por ahora</Text>
+                  <Ionicons name="arrow-back" size={16} color="#102e50" />
+                  <Text style={styles.volverFormText}>Volver al formulario</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -367,7 +386,7 @@ export default function RegistroPacienteScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Registrar paciente</Text>
+        <Text style={styles.headerTitle}>{editando ? 'Editar paciente' : 'Registrar paciente'}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -527,7 +546,7 @@ export default function RegistroPacienteScreen() {
               : (
                 <>
                   <Ionicons name="checkmark-circle-outline" size={20} color={Colors.white} style={{ marginRight: 8 }} />
-                  <Text style={styles.btnText}>Guardar paciente</Text>
+                  <Text style={styles.btnText}>{editando ? 'Guardar cambios' : 'Guardar paciente'}</Text>
                 </>
               )}
           </TouchableOpacity>
@@ -593,6 +612,8 @@ const styles = StyleSheet.create({
 
   skipBtn:  { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
   skipText: { fontSize: 14, color: Colors.textSecondary, textDecorationLine: 'underline' },
+  volverFormBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#102e50', marginTop: 12 },
+  volverFormText: { fontSize: 14, fontWeight: '600', color: '#102e50' },
 
   fotoContainer:   { alignItems: 'center', marginBottom: 20, marginTop: 4 },
   fotoBtn:         { position: 'relative', marginBottom: 8 },

@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useNavigation, useFocusEffect } from 'expo-router'
 import { useRouter } from 'expo-router'
+import * as ImagePicker from 'expo-image-picker'
 import { Colors } from '@/constants/Colors'
 import { pacienteService, familiarService } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
@@ -142,6 +143,7 @@ function EditarModal({
   const [eps,      setEps]      = useState(pac?.eps               ?? '')
   const [famNom,   setFamNom]   = useState(pac?.familiar_nombre   ?? '')
   const [famTel,   setFamTel]   = useState(pac?.familiar_telefono ?? '')
+  const [foto,     setFoto]     = useState<string | null>(pac?.foto ?? null)
   const [saving,   setSaving]   = useState(false)
   const [error,    setError]    = useState('')
 
@@ -154,7 +156,47 @@ function EditarModal({
     setEps(p?.eps                ?? '')
     setFamNom(p?.familiar_nombre ?? '')
     setFamTel(p?.familiar_telefono ?? '')
+    setFoto(p?.foto ?? null)
     setError('')
+  }
+
+  const seleccionarFoto = () => {
+    Alert.alert('Foto del paciente', 'Elige una opción', [
+      {
+        text: 'Galería',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+          if (status !== 'granted') {
+            Alert.alert('Permiso requerido', 'Se necesita acceso a la galería para seleccionar una foto.')
+            return
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true,
+          })
+          if (!result.canceled && result.assets[0].base64) {
+            setFoto(`data:image/jpeg;base64,${result.assets[0].base64}`)
+          }
+        },
+      },
+      {
+        text: 'Cámara',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync()
+          if (status !== 'granted') {
+            Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para tomar una foto.')
+            return
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true,
+          })
+          if (!result.canceled && result.assets[0].base64) {
+            setFoto(`data:image/jpeg;base64,${result.assets[0].base64}`)
+          }
+        },
+      },
+      ...(foto ? [{ text: 'Quitar foto', style: 'destructive' as const, onPress: () => setFoto(null) }] : []),
+      { text: 'Cancelar', style: 'cancel' as const },
+    ])
   }
 
   const guardar = async () => {
@@ -172,6 +214,7 @@ function EditarModal({
         eps:               eps.trim()    || null,
         familiar_nombre:   famNom.trim() || null,
         familiar_telefono: famTel.trim() || null,
+        foto:              foto ?? '',
       })
       onGuardado()
     } catch (e: any) {
@@ -203,6 +246,22 @@ function EditarModal({
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
+
+            <View style={styles.editFotoContainer}>
+              <TouchableOpacity style={styles.editFotoBtn} onPress={seleccionarFoto} activeOpacity={0.8}>
+                {foto ? (
+                  <Image source={{ uri: foto }} style={styles.editFotoImg} />
+                ) : (
+                  <View style={styles.editFotoPlaceholder}>
+                    <Ionicons name="camera-outline" size={24} color={Colors.textSecondary} />
+                  </View>
+                )}
+                <View style={styles.editFotoBadge}>
+                  <Ionicons name="pencil" size={11} color={Colors.white} />
+                </View>
+              </TouchableOpacity>
+              <Text style={styles.editFotoLabel}>Foto del paciente</Text>
+            </View>
 
             <Text style={styles.mSectionLabel}>Información básica</Text>
 
@@ -491,6 +550,24 @@ const styles = StyleSheet.create({
 
   errorBox:  { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginBottom: 14, borderLeftWidth: 3, borderLeftColor: Colors.error },
   errorText: { flex: 1, color: Colors.error, fontSize: 13 },
+
+  editFotoContainer: { alignItems: 'center', marginBottom: 18 },
+  editFotoBtn:       { width: 82, height: 82, borderRadius: 41 },
+  editFotoImg:       { width: 82, height: 82, borderRadius: 41, borderWidth: 2, borderColor: '#102e50' },
+  editFotoPlaceholder: {
+    width: 82, height: 82, borderRadius: 41,
+    backgroundColor: Colors.background,
+    borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  editFotoBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: '#102e50',
+    borderWidth: 2, borderColor: Colors.white,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  editFotoLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600', marginTop: 8 },
 
   mSectionLabel: { fontSize: 12, fontWeight: '700', color: '#102e50', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12, marginTop: 4 },
   mRow:          { flexDirection: 'row', marginBottom: 14 },

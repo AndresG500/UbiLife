@@ -3,11 +3,12 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator,
   KeyboardAvoidingView, Platform, ScrollView,
-  ImageBackground,
+  ImageBackground, Image, Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import * as ImagePicker from 'expo-image-picker'
 import { Colors } from '@/constants/Colors'
 import { familiarService } from '@/services/api'
 
@@ -18,6 +19,7 @@ export default function RegisterFamiliarScreen() {
   const [password,  setPassword]  = useState('')
   const [confirm,   setConfirm]   = useState('')
   const [codigo,    setCodigo]    = useState('')
+  const [foto,      setFoto]      = useState<string | null>(null)
   const [loading,         setLoading]         = useState(false)
   const [error,           setError]           = useState('')
   const [errorEsServidor, setErrorEsServidor] = useState(false)
@@ -37,6 +39,45 @@ export default function RegisterFamiliarScreen() {
     return null
   }
 
+  const seleccionarFoto = () => {
+    Alert.alert('Foto de perfil', 'Elige una opción', [
+      {
+        text: 'Galería',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+          if (status !== 'granted') {
+            Alert.alert('Permiso requerido', 'Se necesita acceso a la galería para seleccionar una foto.')
+            return
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true,
+          })
+          if (!result.canceled && result.assets[0].base64) {
+            setFoto(`data:image/jpeg;base64,${result.assets[0].base64}`)
+          }
+        },
+      },
+      {
+        text: 'Cámara',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync()
+          if (status !== 'granted') {
+            Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para tomar una foto.')
+            return
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true,
+          })
+          if (!result.canceled && result.assets[0].base64) {
+            setFoto(`data:image/jpeg;base64,${result.assets[0].base64}`)
+          }
+        },
+      },
+      ...(foto ? [{ text: 'Quitar foto', style: 'destructive' as const, onPress: () => setFoto(null) }] : []),
+      { text: 'Cancelar', style: 'cancel' as const },
+    ])
+  }
+
   const handleRegister = async () => {
     const validationError = validate()
     if (validationError) { setError(validationError); return }
@@ -44,12 +85,13 @@ export default function RegisterFamiliarScreen() {
     setLoading(true)
     setError('')
     try {
-      const payload: { name: string; email: string; password: string; phone?: string; codigo_grupo?: string } = {
+      const payload: { name: string; email: string; password: string; phone?: string; foto?: string; codigo_grupo?: string } = {
         name:     name.trim(),
         email:    email.trim().toLowerCase(),
         password,
       }
       if (phone.trim()) payload.phone = phone.trim()
+      if (foto) payload.foto = foto
       if (codigo.trim()) payload.codigo_grupo = codigo.trim()
 
       await familiarService.registrar(payload)
@@ -194,6 +236,23 @@ export default function RegisterFamiliarScreen() {
                   <Text style={errorEsServidor ? styles.errorText : styles.warningText}>{error}</Text>
                 </View>
               ) : null}
+
+              {/* Foto de perfil (opcional) */}
+              <View style={styles.fotoContainer}>
+                <TouchableOpacity style={styles.fotoBtn} onPress={seleccionarFoto} activeOpacity={0.8}>
+                  {foto ? (
+                    <Image source={{ uri: foto }} style={styles.fotoImagen} />
+                  ) : (
+                    <View style={styles.fotoPlaceholder}>
+                      <Ionicons name="camera-outline" size={26} color={Colors.textSecondary} />
+                    </View>
+                  )}
+                  <View style={styles.fotoBadge}>
+                    <Ionicons name="pencil" size={11} color={Colors.white} />
+                  </View>
+                </TouchableOpacity>
+                <Text style={styles.fotoLabel}>Foto de perfil <Text style={styles.opt}>(opcional)</Text></Text>
+              </View>
 
               <View style={styles.field}>
                 <Text style={styles.label}>Tu nombre <Text style={styles.req}>*</Text></Text>
@@ -439,6 +498,24 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   warningText: { flex: 1, color: '#92400e', fontSize: 13, lineHeight: 19 },
+
+  fotoContainer: { alignItems: 'center', marginBottom: 20 },
+  fotoBtn:       { width: 88, height: 88, borderRadius: 44 },
+  fotoImagen:    { width: 88, height: 88, borderRadius: 44, borderWidth: 2, borderColor: Colors.primary },
+  fotoPlaceholder: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: Colors.background,
+    borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  fotoBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: Colors.primary,
+    borderWidth: 2, borderColor: Colors.white,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  fotoLabel: { fontSize: 12, color: Colors.text, fontWeight: '600', marginTop: 8 },
 
   field: { marginBottom: 16 },
   label: {

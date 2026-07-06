@@ -11,6 +11,7 @@ interface Cuidador {
   name?: string
   email: string
   phone?: string
+  foto?: string | null
 }
 
 type TipoUsuario = 'cuidador' | 'familiar' | 'admin'
@@ -22,6 +23,7 @@ interface AuthContextType {
   loading:   boolean
   login:     (token: string, cuidador: Cuidador, tipo?: TipoUsuario) => Promise<void>
   logout:    () => Promise<void>
+  actualizarUsuario: (datos: Partial<Cuidador>) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -56,9 +58,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setToken(t)
           setCuidador(c ? JSON.parse(c) : null)
           setTipoUsuario(tipo ?? 'cuidador')
-        } catch {
-          await SecureStore.deleteItemAsync('token')
-          await AsyncStorage.multiRemove(['cuidador', 'tipoUsuario'])
+        } catch (err) {
+          const status = axios.isAxiosError(err) ? err.response?.status : undefined
+          if (status === 401 || status === 403) {
+            // Token realmente inválido/revocado → limpiar sesión
+            await SecureStore.deleteItemAsync('token')
+            await AsyncStorage.multiRemove(['cuidador', 'tipoUsuario'])
+          } else {
+            // Error de red / timeout / servidor caído → conservar sesión y entrar
+            // de forma optimista. El interceptor 401 de api.ts desloguea si el
+            // token resulta inválido en la primera petición real.
+            setToken(t)
+            setCuidador(c ? JSON.parse(c) : null)
+            setTipoUsuario(tipo ?? 'cuidador')
+          }
         }
       }
     } finally {
@@ -83,8 +96,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTipoUsuario('cuidador')
   }
 
+  const actualizarUsuario = async (datos: Partial<Cuidador>) => {
+    setCuidador((prev) => {
+      const actualizado = { ...(prev ?? { email: '' }), ...datos } as Cuidador
+      AsyncStorage.setItem('cuidador', JSON.stringify(actualizado)).catch(() => {})
+      return actualizado
+    })
+  }
+
   return (
-    <AuthContext.Provider value={{ token, cuidador, tipoUsuario, loading, login, logout }}>
+    <AuthContext.Provider value={{ token, cuidador, tipoUsuario, loading, login, logout, actualizarUsuario }}>
       {children}
     </AuthContext.Provider>
   )

@@ -17,10 +17,17 @@ export function registrarLogout(fn: () => Promise<void>) {
   _logoutHandler = fn
 }
 
+// Endpoints de autenticación: un 401 aquí significa "credenciales incorrectas",
+// no "sesión expirada", así que NO deben disparar el auto-logout global (el login
+// prueba cuidador→familiar→admin en cascada y cada intento fallido da 401).
+const RUTAS_AUTH = ['/verificar', '/login', '/registrar']
+
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
-    if (error.response?.status === 401 && _logoutHandler) {
+    const url = error.config?.url ?? ''
+    const esRutaAuth = RUTAS_AUTH.some((r) => url.includes(r))
+    if (error.response?.status === 401 && !esRutaAuth && _logoutHandler) {
       await _logoutHandler()
     }
     return Promise.reject(error)
@@ -30,7 +37,7 @@ api.interceptors.response.use(
 // ── Cuidador ───────────────────────────────────────────────────────────────
 
 export const cuidadorService = {
-  registrar: (datos: { name: string; email: string; password: string; phone?: string }) =>
+  registrar: (datos: { name: string; email: string; password: string; phone?: string; foto?: string }) =>
     api.post('/cuidadores/registrar', datos),
 
   login: (email: string, password: string) =>
@@ -38,7 +45,7 @@ export const cuidadorService = {
 
   perfil: () => api.get('/cuidadores/perfil'),
 
-  actualizar: (datos: { name?: string; phone?: string }) =>
+  actualizar: (datos: { name?: string; phone?: string; foto?: string }) =>
     api.put('/cuidadores/actualizar', datos),
 
   logout: () => api.post('/cuidadores/logout').catch(() => {}),
@@ -55,6 +62,7 @@ export const familiarService = {
     email: string
     password: string
     phone?: string
+    foto?: string
     codigo_grupo?: string
   }) => api.post('/familiares/registrar', datos),
 
@@ -65,7 +73,7 @@ export const familiarService = {
 
   misPacientes: () => api.get('/familiares/pacientes'),
 
-  actualizar: (datos: { name?: string; phone?: string }) =>
+  actualizar: (datos: { name?: string; phone?: string; foto?: string }) =>
     api.put('/familiares/actualizar', datos),
 
   logout: () => api.post('/familiares/logout').catch(() => {}),

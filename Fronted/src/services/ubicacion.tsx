@@ -47,6 +47,10 @@ export interface UbicacionCuidador {
   latitud: number
   longitud: number
   timestamp?: string
+  nombre?: string
+  telefono?: string | null
+  foto?: string | null
+  tipo?: string
 }
 
 export interface UbicacionFamiliar {
@@ -54,6 +58,10 @@ export interface UbicacionFamiliar {
   latitud: number
   longitud: number
   timestamp?: string
+  nombre?: string
+  telefono?: string | null
+  foto?: string | null
+  tipo?: string
 }
 
 export const obtenerUbicacionesGrupo = async (

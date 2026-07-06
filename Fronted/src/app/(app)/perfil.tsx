@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ScrollView, Alert, Modal, KeyboardAvoidingView, Platform,
+  ActivityIndicator, ScrollView, Alert, Modal, KeyboardAvoidingView, Platform, Image,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useNavigation } from 'expo-router'
+import * as ImagePicker from 'expo-image-picker'
 import { Colors } from '@/constants/Colors'
 import { useAuth } from '@/context/AuthContext'
 import AnimatedScreen from '@/components/AnimatedScreen'
@@ -15,13 +16,14 @@ type PacienteConDispositivo = { id_paciente: string; nombre_paciente: string; id
 
 export default function PerfilScreen() {
   const navigation = useNavigation()
-  const { cuidador, logout, tipoUsuario } = useAuth()
+  const { cuidador, logout, tipoUsuario, actualizarUsuario } = useAuth()
 
   const [nombre,   setNombre]   = useState(cuidador?.name  ?? '')
   const [telefono, setTelefono] = useState(cuidador?.phone ?? '')
   const [loading,  setLoading]  = useState(false)
   const [saved,    setSaved]    = useState(false)
   const [error,    setError]    = useState('')
+  const [subiendoFoto, setSubiendoFoto] = useState(false)
 
   // ── Reportar un problema ──
   const [reporteVisible,    setReporteVisible]    = useState(false)
@@ -38,6 +40,50 @@ export default function PerfilScreen() {
   const rolLabel = tipoUsuario === 'familiar' ? 'Familiar' : 'Cuidador'
   const rolIcon: React.ComponentProps<typeof Ionicons>['name'] =
     tipoUsuario === 'familiar' ? 'heart' : 'shield-checkmark'
+
+  const guardarFoto = async (foto: string | null) => {
+    setSubiendoFoto(true)
+    try {
+      if (tipoUsuario === 'familiar') {
+        await familiarService.actualizar({ foto: foto ?? '' })
+      } else {
+        await cuidadorService.actualizar({ foto: foto ?? '' })
+      }
+      await actualizarUsuario({ foto })
+    } catch {
+      Alert.alert('Error', 'No se pudo actualizar la foto. Inténtalo de nuevo.')
+    } finally {
+      setSubiendoFoto(false)
+    }
+  }
+
+  const elegirFoto = async (origen: 'galeria' | 'camara') => {
+    const permiso = origen === 'camara'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (permiso.status !== 'granted') {
+      Alert.alert('Permiso requerido', `Se necesita acceso a la ${origen === 'camara' ? 'cámara' : 'galería'} para cambiar tu foto.`)
+      return
+    }
+    const result = origen === 'camara'
+      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true })
+    if (!result.canceled && result.assets[0].base64) {
+      guardarFoto(`data:image/jpeg;base64,${result.assets[0].base64}`)
+    }
+  }
+
+  const handleCambiarFoto = () => {
+    if (subiendoFoto) return
+    Alert.alert('Foto de perfil', 'Elige una opción', [
+      { text: 'Galería', onPress: () => elegirFoto('galeria') },
+      { text: 'Cámara',  onPress: () => elegirFoto('camara') },
+      ...(cuidador?.foto
+        ? [{ text: 'Quitar foto', style: 'destructive' as const, onPress: () => guardarFoto(null) }]
+        : []),
+      { text: 'Cancelar', style: 'cancel' as const },
+    ])
+  }
 
   const handleGuardar = async () => {
     if (nombre.trim().length < 2) {
@@ -143,12 +189,26 @@ export default function PerfilScreen() {
           <Ionicons name="menu" size={24} color={Colors.white} />
         </TouchableOpacity>
 
-        {/* Avatar */}
-        <View style={styles.avatarRing}>
+        {/* Avatar (tocable para cambiar la foto) */}
+        <TouchableOpacity
+          style={styles.avatarRing}
+          onPress={handleCambiarFoto}
+          activeOpacity={0.85}
+          disabled={subiendoFoto}
+        >
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{inicial}</Text>
+            {cuidador?.foto ? (
+              <Image source={{ uri: cuidador.foto }} style={styles.avatarImg} />
+            ) : (
+              <Text style={styles.avatarText}>{inicial}</Text>
+            )}
           </View>
-        </View>
+          <View style={styles.avatarEditBadge}>
+            {subiendoFoto
+              ? <ActivityIndicator size="small" color={Colors.white} />
+              : <Ionicons name="camera" size={14} color={Colors.white} />}
+          </View>
+        </TouchableOpacity>
 
         <Text style={styles.heroName}>{cuidador?.name ?? 'Usuario'}</Text>
         <Text style={styles.heroEmail}>{cuidador?.email ?? ''}</Text>
@@ -429,8 +489,17 @@ const styles = StyleSheet.create({
     width: 82, height: 82, borderRadius: 41,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center', alignItems: 'center',
+    overflow: 'hidden',
   },
+  avatarImg:   { width: 82, height: 82, borderRadius: 41 },
   avatarText:  { fontSize: 34, fontWeight: '700', color: Colors.white },
+  avatarEditBadge: {
+    position: 'absolute', bottom: 10, right: 4,
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: '#2563eb',
+    borderWidth: 2, borderColor: '#102e50',
+    justifyContent: 'center', alignItems: 'center',
+  },
   heroName:    { fontSize: 20, fontWeight: '700', color: Colors.white, marginBottom: 4 },
   heroEmail:   { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 12 },
   rolBadge: {
