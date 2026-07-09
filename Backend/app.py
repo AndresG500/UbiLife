@@ -77,6 +77,9 @@ async def lifespan(app: FastAPI):
     # TTL: borra ubicaciones de cuidadores/familiares si no se actualizan en 15 min
     await db["UbicacionesCuidadores"].create_index("timestamp", expireAfterSeconds=900)
     await db["UbicacionesFamiliares"].create_index("timestamp", expireAfterSeconds=900)
+    # TTL: borra invitaciones automáticamente cuando caducan
+    await db["Invitaciones"].create_index("expira_en", expireAfterSeconds=0)
+    await db["Invitaciones"].create_index("token", unique=True)
     # Índices de consulta frecuente
     await db["Administradores"].create_index("email", unique=True)
     await db["Cuidadores"].create_index("email", unique=True)

@@ -1,17 +1,18 @@
 from typing import Annotated
-from fastapi import APIRouter, HTTPException, Depends, Path
+from fastapi import APIRouter, HTTPException, Depends, Path, Request
 from pydantic import BaseModel
-from models.model_grupo import CrearGrupo, ActualizarGrupo, AgregarCuidador, AgregarPaciente, UbicacionCuidador, UbicacionFamiliar
+from models.model_grupo import CrearGrupo, ActualizarGrupo, AgregarCuidador, AgregarPaciente, UbicacionCuidador, UbicacionFamiliar, CrearInvitacion
 from services.service_grupo import (
     listar_grupos, crear_grupo, eliminar_grupo, obtener_grupo, actualizar_grupo,
-    agregar_cuidador, eliminar_cuidador,
+    agregar_cuidador, eliminar_cuidador, eliminar_familiar,
     agregar_paciente,
     guardar_ubicacion_cuidador, obtener_ubicaciones_grupo, obtener_cuidador_mas_cercano,
     guardar_ubicacion_familiar, obtener_ubicaciones_grupo_familiar,
     obtener_miembros_grupo,
-    unirse_a_grupo,
+    consumir_invitacion, crear_invitacion, listar_invitaciones, revocar_invitacion,
 )
 from security.dependencies import get_cuidador_actual, get_familiar_actual
+from security.limiter import limiter
 
 class UnirseGrupo(BaseModel):
     codigo: str
@@ -32,12 +33,14 @@ async def listar(cuidador_actual = Depends(get_cuidador_actual)):
 
 
 @router.post("/unirse")
+@limiter.limit("5/minute")
 async def unirse(
+    request: Request,
     datos: UnirseGrupo,
     familiar_actual = Depends(get_familiar_actual),
 ):
     familiar_id = str(familiar_actual["_id"])
-    resultado   = await unirse_a_grupo(familiar_id, datos.codigo)
+    resultado   = await consumir_invitacion(datos.codigo, familiar_id)
     if "error" in resultado:
         raise HTTPException(status_code=400, detail=resultado["error"])
     return resultado
@@ -114,6 +117,53 @@ async def remove_cuidador(
     cuidador_actual = Depends(get_cuidador_actual)
 ):
     resultado = await eliminar_cuidador(grupo_id, cuidador_id, str(cuidador_actual["_id"]))
+    if "error" in resultado:
+        raise HTTPException(status_code=403, detail=resultado["error"])
+    return resultado
+
+
+@router.delete("/{grupo_id}/familiares/{familiar_id}")
+async def remove_familiar(
+    grupo_id: MongoId,
+    familiar_id: MongoId,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
+    resultado = await eliminar_familiar(grupo_id, familiar_id, str(cuidador_actual["_id"]))
+    if "error" in resultado:
+        raise HTTPException(status_code=403, detail=resultado["error"])
+    return resultado
+
+
+@router.post("/{grupo_id}/invitaciones")
+async def crear_invitacion_route(
+    grupo_id: MongoId,
+    datos: CrearInvitacion,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
+    resultado = await crear_invitacion(grupo_id, str(cuidador_actual["_id"]), datos.expira_horas)
+    if "error" in resultado:
+        raise HTTPException(status_code=403, detail=resultado["error"])
+    return resultado
+
+
+@router.get("/{grupo_id}/invitaciones")
+async def listar_invitaciones_route(
+    grupo_id: MongoId,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
+    resultado = await listar_invitaciones(grupo_id, str(cuidador_actual["_id"]))
+    if isinstance(resultado, dict) and "error" in resultado:
+        raise HTTPException(status_code=403, detail=resultado["error"])
+    return resultado
+
+
+@router.delete("/{grupo_id}/invitaciones/{invitacion_id}")
+async def revocar_invitacion_route(
+    grupo_id: MongoId,
+    invitacion_id: MongoId,
+    cuidador_actual = Depends(get_cuidador_actual)
+):
+    resultado = await revocar_invitacion(grupo_id, invitacion_id, str(cuidador_actual["_id"]))
     if "error" in resultado:
         raise HTTPException(status_code=403, detail=resultado["error"])
     return resultado

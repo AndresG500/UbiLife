@@ -28,6 +28,9 @@ class AgregarCuidador(BaseModel):
 class AgregarPaciente(BaseModel):
     paciente_id: str = Field(...)
 
+class CrearInvitacion(BaseModel):
+    expira_horas: Optional[int] = Field(None, ge=1, le=720)
+
 class UbicacionCuidador(BaseModel):
     cuidador_id: Optional[str] = Field(None)
     latitud: float = Field(..., ge=-90.0, le=90.0)

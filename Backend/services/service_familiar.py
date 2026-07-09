@@ -5,6 +5,7 @@ import asyncio
 import bcrypt
 from utils.Logger import Logger
 from security.jwt_handler import crear_token
+from services.service_grupo import consumir_invitacion
 from bson import ObjectId
 
 BCRYPT_ROUNDS = 12
@@ -15,20 +16,10 @@ async def registrar_familiar(datos: CrearFamiliar):
     try:
         db             = get_database()
         col_familiares = db["Familiares"]
-        col_grupos     = db["Grupos"]
 
         if await col_familiares.find_one({"email": datos.email}):
             Logger.add_to_log("warn", f"Email familiar ya registrado: {datos.email}")
             return {"error": "No se pudo completar el registro. Verifica tus datos."}
-
-        grupo_id = None
-        if datos.codigo_grupo:
-            codigo = datos.codigo_grupo.strip().upper()
-            grupo  = await col_grupos.find_one({"codigo": codigo})
-            if not grupo:
-                Logger.add_to_log("warn", f"Código de grupo inválido: {datos.codigo_grupo}")
-                return {"error": "Código de grupo inválido. Verifica el código con el cuidador."}
-            grupo_id = str(grupo["_id"])
 
         hashed = bcrypt.hashpw(
             datos.password.encode("utf-8"),
@@ -41,7 +32,7 @@ async def registrar_familiar(datos: CrearFamiliar):
             "password":   hashed,
             "phone":      datos.phone,
             "foto":       datos.foto,
-            "grupo_ids":  [grupo_id] if grupo_id else [],
+            "grupo_ids":  [],
             "activo":     True,
             "created_at": datetime.now(timezone.utc),
         }
@@ -49,14 +40,15 @@ async def registrar_familiar(datos: CrearFamiliar):
         resultado   = await col_familiares.insert_one(doc)
         familiar_id = str(resultado.inserted_id)
 
-        if grupo_id:
-            await col_grupos.update_one(
-                {"_id": ObjectId(grupo_id)},
-                {"$addToSet": {"familiar_ids": familiar_id}}
-            )
+        # El grupo es opcional: si viene una invitación, se consume (un solo uso).
+        # Un código inválido NO bloquea el registro; el familiar podrá unirse luego.
+        unido = False
+        if datos.codigo_grupo:
+            res   = await consumir_invitacion(datos.codigo_grupo, familiar_id)
+            unido = "grupo_id" in res
 
         Logger.add_to_log("info", f"Familiar registrado: {datos.email}")
-        return {"mensaje": "Familiar registrado exitosamente"}
+        return {"mensaje": "Familiar registrado exitosamente", "unido_a_grupo": unido}
 
     except Exception as ex:
         Logger.add_to_log("error", f"Error al registrar familiar: {ex}")

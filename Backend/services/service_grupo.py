@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import secrets
 import string
 from database.database import get_database
@@ -30,6 +30,10 @@ def _generar_codigo() -> str:
     return "FAM-" + "".join(secrets.choice(chars) for _ in range(6))
 
 
+# Horas de validez por defecto de una invitación
+INVITACION_EXPIRA_HORAS = 72
+
+
 async def crear_grupo(datos: CrearGrupo):
     try:
         db             = get_database()
@@ -59,7 +63,6 @@ async def crear_grupo(datos: CrearGrupo):
             "cuidador_ids":          [datos.cuidador_principal_id],
             "paciente_ids":          datos.paciente_ids,
             "familiar_ids":          [],
-            "codigo":                _generar_codigo(),
             "created_at":            datetime.now(timezone.utc)
         })
 
@@ -210,6 +213,47 @@ async def eliminar_cuidador(grupo_id: str, cuidador_id: str, cuidador_solicitant
     except Exception as ex:
         Logger.add_to_log("error", f"Error al eliminar cuidador del grupo: {ex}")
         return {"error": f"No se pudo eliminar el cuidador del grupo: {ex}"}
+
+
+async def eliminar_familiar(grupo_id: str, familiar_id: str, cuidador_solicitante_id: str) -> dict:
+    try:
+        db             = get_database()
+        col_grupos     = db["Grupos"]
+        col_familiares = db["Familiares"]
+
+        grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
+        if not grupo:
+            Logger.add_to_log("warn", f"Grupo no encontrado: {grupo_id}")
+            return {"mensaje": "No se encontró el grupo"}
+
+        if cuidador_solicitante_id not in grupo.get("cuidador_ids", []):
+            Logger.add_to_log("warn", f"Expulsión de familiar no autorizada: {cuidador_solicitante_id}")
+            return {"error": "No tienes permiso para expulsar familiares de este grupo"}
+
+        if familiar_id not in grupo.get("familiar_ids", []):
+            Logger.add_to_log("warn", f"Familiar no pertenece al grupo: {familiar_id}")
+            return {"mensaje": "El familiar no pertenece a este grupo"}
+
+        await col_grupos.update_one(
+            {"_id": ObjectId(grupo_id)},
+            {"$pull": {"familiar_ids": familiar_id}}
+        )
+
+        await col_familiares.update_one(
+            {"_id": ObjectId(familiar_id)},
+            {"$pull": {"grupo_ids": grupo_id}}
+        )
+
+        # No se borra UbicacionesFamiliares: es una posición global por familiar
+        # (sin grupo_id) y puede seguir siendo válida para otros grupos. Al quitar
+        # la membresía, deja de aparecer en las consultas de ubicación de este grupo.
+
+        Logger.add_to_log("info", f"Familiar {familiar_id} expulsado del grupo {grupo_id}")
+        return {"mensaje": "Familiar eliminado del grupo exitosamente"}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al eliminar familiar del grupo: {ex}")
+        return {"error": f"No se pudo eliminar el familiar del grupo: {ex}"}
 
 
 async def agregar_paciente(grupo_id: str, paciente_id: str, cuidador_solicitante_id: str):
@@ -449,38 +493,145 @@ async def actualizar_grupo(grupo_id: str, cuidador_id: str, datos: ActualizarGru
         return {"error": f"No se pudo actualizar el grupo: {ex}"}
 
 
-async def unirse_a_grupo(familiar_id: str, codigo: str) -> dict:
+async def crear_invitacion(grupo_id: str, cuidador_id: str, expira_horas: int | None = None) -> dict:
+    try:
+        db         = get_database()
+        col_grupos = db["Grupos"]
+        col_inv    = db["Invitaciones"]
+
+        grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
+        if not grupo:
+            return {"error": "No se encontró el grupo"}
+        if cuidador_id not in grupo.get("cuidador_ids", []):
+            Logger.add_to_log("warn", f"Creación de invitación no autorizada: {cuidador_id}")
+            return {"error": "No tienes permiso para crear invitaciones en este grupo"}
+
+        horas     = expira_horas or INVITACION_EXPIRA_HORAS
+        now       = datetime.now(timezone.utc)
+        expira_en = now + timedelta(hours=horas)
+
+        # Token único (reintenta ante colisión improbable; el índice único protege la carrera)
+        token = None
+        for _ in range(5):
+            candidato = _generar_codigo()
+            if not await col_inv.find_one({"token": candidato}):
+                token = candidato
+                break
+        if not token:
+            return {"error": "No se pudo generar una invitación, intenta de nuevo"}
+
+        await col_inv.insert_one({
+            "grupo_id":   grupo_id,
+            "token":      token,
+            "creado_por": cuidador_id,
+            "created_at": now,
+            "expira_en":  expira_en,
+            "usado":      False,
+            "usado_por":  None,
+            "usado_en":   None,
+        })
+
+        Logger.add_to_log("info", f"Invitación creada para grupo {grupo_id} por {cuidador_id}")
+        return {"token": token, "expira_en": expira_en.isoformat()}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al crear invitación: {ex}")
+        return {"error": f"No se pudo crear la invitación: {ex}"}
+
+
+async def listar_invitaciones(grupo_id: str, cuidador_id: str):
+    try:
+        db         = get_database()
+        col_grupos = db["Grupos"]
+        col_inv    = db["Invitaciones"]
+
+        grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
+        if not grupo:
+            return {"error": "No se encontró el grupo"}
+        if cuidador_id not in grupo.get("cuidador_ids", []):
+            return {"error": "No tienes permiso para ver las invitaciones de este grupo"}
+
+        now    = datetime.now(timezone.utc)
+        cursor = col_inv.find({"grupo_id": grupo_id, "usado": False, "expira_en": {"$gt": now}})
+        invitaciones = []
+        async for inv in cursor:
+            invitaciones.append({
+                "id":         str(inv["_id"]),
+                "token":      inv["token"],
+                "expira_en":  inv["expira_en"].isoformat() if inv.get("expira_en") else None,
+                "created_at": inv["created_at"].isoformat() if inv.get("created_at") else None,
+            })
+        return invitaciones
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al listar invitaciones: {ex}")
+        return {"error": f"No se pudieron listar las invitaciones: {ex}"}
+
+
+async def revocar_invitacion(grupo_id: str, invitacion_id: str, cuidador_id: str) -> dict:
+    try:
+        db         = get_database()
+        col_grupos = db["Grupos"]
+        col_inv    = db["Invitaciones"]
+
+        grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
+        if not grupo:
+            return {"error": "No se encontró el grupo"}
+        if cuidador_id not in grupo.get("cuidador_ids", []):
+            return {"error": "No tienes permiso para revocar invitaciones de este grupo"}
+
+        res = await col_inv.delete_one({"_id": ObjectId(invitacion_id), "grupo_id": grupo_id})
+        if res.deleted_count == 0:
+            return {"mensaje": "La invitación no existe o ya fue eliminada"}
+
+        Logger.add_to_log("info", f"Invitación {invitacion_id} revocada en grupo {grupo_id}")
+        return {"mensaje": "Invitación revocada"}
+
+    except Exception as ex:
+        Logger.add_to_log("error", f"Error al revocar invitación: {ex}")
+        return {"error": f"No se pudo revocar la invitación: {ex}"}
+
+
+async def consumir_invitacion(token: str, familiar_id: str) -> dict:
+    """Consume una invitación de un solo uso y une al familiar al grupo.
+
+    El flip atómico de `usado` (False→True) garantiza que un token solo pueda
+    usarse una vez, sin condición de carrera entre dos familiares.
+    """
     try:
         db             = get_database()
         col_grupos     = db["Grupos"]
         col_familiares = db["Familiares"]
+        col_inv        = db["Invitaciones"]
 
-        grupo = await col_grupos.find_one({"codigo": codigo.strip().upper()})
-        if not grupo:
-            Logger.add_to_log("warn", f"Código de grupo inválido: {codigo}")
-            return {"error": "Código de grupo inválido. Verifica el código con el cuidador."}
+        token = token.strip().upper()
+        now   = datetime.now(timezone.utc)
 
-        grupo_id = str(grupo["_id"])
+        inv = await col_inv.find_one_and_update(
+            {"token": token, "usado": False, "expira_en": {"$gt": now}},
+            {"$set": {"usado": True, "usado_por": familiar_id, "usado_en": now}},
+        )
+        if not inv:
+            Logger.add_to_log("warn", f"Invitación inválida/usada/caducada: {token}")
+            return {"error": "Invitación inválida, ya utilizada o caducada. Pide una nueva al cuidador."}
 
-        if familiar_id in grupo.get("familiar_ids", []):
-            Logger.add_to_log("warn", f"Familiar {familiar_id} ya pertenece al grupo {grupo_id}")
-            return {"mensaje": "Ya perteneces a este grupo"}
+        grupo_id = str(inv["grupo_id"])
 
+        # Escrituras secundarias (best-effort, estilo del repo)
         await col_grupos.update_one(
-            {"_id": grupo["_id"]},
+            {"_id": ObjectId(grupo_id)},
             {"$addToSet": {"familiar_ids": familiar_id}}
         )
-
         await col_familiares.update_one(
             {"_id": ObjectId(familiar_id)},
             {"$addToSet": {"grupo_ids": grupo_id}}
         )
 
-        Logger.add_to_log("info", f"Familiar {familiar_id} se unió al grupo {grupo_id}")
+        Logger.add_to_log("info", f"Familiar {familiar_id} se unió al grupo {grupo_id} vía invitación")
         return {"mensaje": "Te has unido al grupo exitosamente", "grupo_id": grupo_id}
 
     except Exception as ex:
-        Logger.add_to_log("error", f"Error al unirse al grupo: {ex}")
+        Logger.add_to_log("error", f"Error al consumir invitación: {ex}")
         return {"error": f"No se pudo unir al grupo: {ex}"}
 
 
