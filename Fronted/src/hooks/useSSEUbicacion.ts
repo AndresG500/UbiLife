@@ -85,8 +85,13 @@ export const useSSEUbicacion = (pacienteId: string | null) => {
           if (cancelado || !e.data) return;
           try {
             const datos = JSON.parse(e.data);
-            ultimoMensajeRef.current = Date.now();
-            setGpsActivo(true);
+            // La frescura se mide con el timestamp REAL del GPS, no con la hora de
+            // llegada: al conectar, el backend reenvía la última ubicación conocida
+            // (posiblemente vieja) y no debe marcarse como "en línea".
+            const tsMs   = datos.timestamp ? new Date(datos.timestamp).getTime() : Date.now();
+            const tsFinal = Number.isNaN(tsMs) ? Date.now() : tsMs;
+            ultimoMensajeRef.current = tsFinal;
+            setGpsActivo(Date.now() - tsFinal < GPS_TIMEOUT_MS);
             setUbicacion({
               latitude:  datos.latitud  ?? datos.lat,
               longitude: datos.longitud ?? datos.lng,

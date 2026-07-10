@@ -48,6 +48,13 @@
       ],
       "expo-web-browser",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "UbiLife necesita acceso a la cámara para escanear el código QR de invitación.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/Logo.png",

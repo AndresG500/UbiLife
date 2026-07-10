@@ -194,6 +194,19 @@ export const grupoService = {
   miembros: (id: string) => api.get(`/grupos/${id}/miembros`),
 
   miembrosFamiliar: (id: string) => api.get(`/grupos/${id}/miembros/familiar`),
+
+  // Invitaciones de un solo uso
+  crearInvitacion: (id: string, expiraHoras?: number | null) =>
+    api.post(`/grupos/${id}/invitaciones`, { expira_horas: expiraHoras ?? null }),
+
+  listarInvitaciones: (id: string) => api.get(`/grupos/${id}/invitaciones`),
+
+  revocarInvitacion: (id: string, invitacionId: string) =>
+    api.delete(`/grupos/${id}/invitaciones/${invitacionId}`),
+
+  // Expulsar a un familiar del grupo
+  expulsarFamiliar: (id: string, familiarId: string) =>
+    api.delete(`/grupos/${id}/familiares/${familiarId}`),
 }
 
 // ── Modo Viaje ─────────────────────────────────────────────────────────────

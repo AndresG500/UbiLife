@@ -355,6 +355,7 @@ export default function MapScreen() {
   const [rutaVisible,   setRutaVisible]   = useState(false)
   const [modalPaciente, setModalPaciente] = useState<any | null>(null)
   const [modalPersona,  setModalPersona]  = useState<any | null>(null)
+  const [sinGrupo,      setSinGrupo]      = useState(false)
 
   const { ubicacion, gpsActivo } = useSSEUbicacion(selPacId)
 
@@ -427,6 +428,7 @@ export default function MapScreen() {
           const resGrupos = await familiarService.misGrupos()
           const gruposList: any[] = Array.isArray(resGrupos.data) ? resGrupos.data : []
           gruposFamiliarRef.current = gruposList
+          setSinGrupo(gruposList.length === 0)
           for (const g of gruposList) {
             const gId = g.id ?? g.grupo_id ?? g._id
             if (!gId) continue
@@ -684,6 +686,21 @@ export default function MapScreen() {
         )}
       </TouchableOpacity>
 
+      {tipoUsuario === 'familiar' && sinGrupo && !loading && (
+        <TouchableOpacity
+          style={styles.sinGrupoBanner}
+          onPress={() => router.push('/(app)/grupo-familiar' as any)}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="people-outline" size={22} color={Colors.white} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sinGrupoTitulo}>Aún no perteneces a un grupo</Text>
+            <Text style={styles.sinGrupoSub}>Únete con el código que te dio el cuidador</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={Colors.white} />
+        </TouchableOpacity>
+      )}
+
       <Modal
         visible={!!modalPaciente}
         transparent
@@ -854,6 +871,18 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12, shadowRadius: 8, elevation: 6,
   },
+  sinGrupoBanner: {
+    position: 'absolute', bottom: 28, left: 16, right: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#102e50',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderRadius: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25, shadowRadius: 12, elevation: 10,
+  },
+  sinGrupoTitulo: { fontSize: 14, fontWeight: '700', color: Colors.white },
+  sinGrupoSub:    { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+
   statusBadgeOffline: { backgroundColor: '#FFF8E1' },
   statusDot:          { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success },
   statusDotOffline:   { backgroundColor: Colors.warning },

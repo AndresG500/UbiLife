@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, Alert, TextInput, Modal, ScrollView, RefreshControl,
@@ -6,6 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import { CameraView, useCameraPermissions } from 'expo-camera'
+import QRCode from 'react-native-qrcode-svg'
 import * as Clipboard from 'expo-clipboard'
 import * as Location from 'expo-location'
 import { useFocusEffect } from 'expo-router'
@@ -25,13 +27,20 @@ interface Grupo {
   cuidador_ids:          string[]
   paciente_ids:          string[]
   familiar_ids:          string[]
-  codigo:                string
+  codigo?:               string
   created_at:            string
 }
 
 interface MiembrosGrupo {
   pacientes:  any[]
   familiares: any[]
+}
+
+interface Invitacion {
+  id:         string
+  token:      string
+  expira_en:  string | null
+  created_at: string | null
 }
 
 function UbicacionLabel({ ub }: { ub: { latitud?: number; longitud?: number; lat?: number; lng?: number } | null | undefined }) {
@@ -73,7 +82,7 @@ function PacienteCard({ pac }: { pac: any }) {
   )
 }
 
-function FamiliarCard({ fam, esMismo }: { fam: any; esMismo?: boolean }) {
+function FamiliarCard({ fam, esMismo, onExpulsar }: { fam: any; esMismo?: boolean; onExpulsar?: () => void }) {
   return (
     <View style={styles.memberCard}>
       <View style={styles.memberIconFam}>
@@ -90,6 +99,11 @@ function FamiliarCard({ fam, esMismo }: { fam: any; esMismo?: boolean }) {
           <Text style={styles.sinUbi}>Sin ubicación reciente</Text>
         )}
       </View>
+      {onExpulsar && (
+        <TouchableOpacity onPress={onExpulsar} style={styles.expulsarBtn} activeOpacity={0.7}>
+          <Ionicons name="person-remove-outline" size={18} color={Colors.error} />
+        </TouchableOpacity>
+      )}
     </View>
   )
 }
@@ -113,6 +127,12 @@ export default function GrupoFamiliarScreen() {
   const [refreshing,    setRefreshing]    = useState(false)
   const [exito,         setExito]         = useState('')
   const [grupoAEliminar, setGrupoAEliminar] = useState<string | null>(null)
+  const [invitacionesMap, setInvitacionesMap] = useState<Record<string, Invitacion[]>>({})
+  const [generando,     setGenerando]     = useState<string | null>(null)
+  const [qrToken,       setQrToken]       = useState<string | null>(null)
+  const [escaneando,    setEscaneando]    = useState(false)
+  const [permisoCamara, solicitarPermisoCamara] = useCameraPermissions()
+  const scanEnCurso = useRef(false)
 
   const mostrarExito = useCallback((msg: string) => {
     setExito(msg)
@@ -169,6 +189,22 @@ export default function GrupoFamiliarScreen() {
         })
       )
       setMiembrosMap(mapa)
+
+      // Invitaciones activas (solo cuidadores)
+      if (!esFamiliar) {
+        const invMap: Record<string, Invitacion[]> = {}
+        await Promise.all(
+          gruposList.map(async (g) => {
+            try {
+              const res = await grupoService.listarInvitaciones(g.id)
+              invMap[g.id] = Array.isArray(res.data) ? res.data : []
+            } catch {
+              invMap[g.id] = []
+            }
+          })
+        )
+        setInvitacionesMap(invMap)
+      }
     } catch (err) {
       console.error('Error cargando grupos:', err)
     } finally {
@@ -213,11 +249,12 @@ export default function GrupoFamiliarScreen() {
     }
   }
 
-  const handleUnirse = async () => {
-    if (!codigoInput.trim()) { Alert.alert('Falta el código', 'Ingresa el código de invitación.'); return }
+  const handleUnirse = async (codigoParam?: string) => {
+    const codigo = (codigoParam ?? codigoInput).trim()
+    if (!codigo) { Alert.alert('Falta el código', 'Ingresa el código de invitación.'); return }
     setUniendose(true)
     try {
-      await grupoService.unirseConCodigo(codigoInput.trim())
+      await grupoService.unirseConCodigo(codigo)
       setModalUnirse(false); setCodigoInput('')
       await cargarDatos()
       mostrarExito('Te has unido al grupo familiar.')
@@ -226,9 +263,76 @@ export default function GrupoFamiliarScreen() {
     } finally { setUniendose(false) }
   }
 
+  const abrirEscaner = async () => {
+    if (!permisoCamara?.granted) {
+      const res = await solicitarPermisoCamara()
+      if (!res.granted) {
+        Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para escanear el código QR.')
+        return
+      }
+    }
+    scanEnCurso.current = false
+    setEscaneando(true)
+  }
+
+  const onCodigoEscaneado = ({ data }: { data: string }) => {
+    if (scanEnCurso.current) return
+    scanEnCurso.current = true
+    const codigo = (data || '').trim().toUpperCase()
+    setEscaneando(false)
+    setCodigoInput(codigo)
+    handleUnirse(codigo)
+  }
+
   const copiarCodigo = async (codigo: string) => {
     await Clipboard.setStringAsync(codigo)
     Alert.alert('Copiado', 'Código de invitación copiado al portapapeles.')
+  }
+
+  const generarInvitacion = async (grupoId: string) => {
+    setGenerando(grupoId)
+    try {
+      await grupoService.crearInvitacion(grupoId)
+      const res = await grupoService.listarInvitaciones(grupoId)
+      setInvitacionesMap((prev) => ({ ...prev, [grupoId]: Array.isArray(res.data) ? res.data : [] }))
+      mostrarExito('Invitación generada. Compártela con un familiar.')
+    } catch (err: any) {
+      Alert.alert('Error', mensajeDeError(err, 'No se pudo generar la invitación. Inténtalo de nuevo.'))
+    } finally { setGenerando(null) }
+  }
+
+  const handleRevocarInvitacion = async (grupoId: string, invId: string) => {
+    try {
+      await grupoService.revocarInvitacion(grupoId, invId)
+      setInvitacionesMap((prev) => ({
+        ...prev,
+        [grupoId]: (prev[grupoId] ?? []).filter((i) => i.id !== invId),
+      }))
+    } catch (err: any) {
+      Alert.alert('Error', mensajeDeError(err, 'No se pudo revocar la invitación.'))
+    }
+  }
+
+  const handleExpulsarFamiliar = (grupoId: string, familiarId: string, nombre: string) => {
+    Alert.alert(
+      'Quitar del grupo',
+      `¿Seguro que quieres quitar a ${nombre}? Dejará de ver la ubicación de los pacientes.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Quitar', style: 'destructive',
+          onPress: async () => {
+            try {
+              await grupoService.expulsarFamiliar(grupoId, familiarId)
+              await cargarDatos()
+              mostrarExito('Familiar eliminado del grupo.')
+            } catch (err: any) {
+              Alert.alert('Error', mensajeDeError(err, 'No se pudo quitar al familiar.'))
+            }
+          },
+        },
+      ]
+    )
   }
 
   if (loading) {
@@ -316,20 +420,50 @@ export default function GrupoFamiliarScreen() {
                   )}
                 </View>
 
-                {/* Código — solo cuidadores */}
+                {/* Invitaciones — solo cuidadores */}
                 {!esFamiliar && (
                   <View style={styles.codigoBox}>
                     <View style={styles.codigoHeader}>
                       <Ionicons name="key" size={13} color={Colors.primary} />
-                      <Text style={styles.codigoLabel}>Código de invitación</Text>
+                      <Text style={styles.codigoLabel}>Invitaciones</Text>
                     </View>
-                    <View style={styles.codigoRow}>
-                      <Text style={styles.codigoText}>{grupo.codigo ?? '—'}</Text>
-                      <TouchableOpacity onPress={() => copiarCodigo(grupo.codigo)} style={styles.copyBtn}>
-                        <Ionicons name="copy-outline" size={18} color={Colors.primary} />
-                      </TouchableOpacity>
-                    </View>
-                    <Text style={styles.codigoHint}>Comparte este código con familiares para que puedan unirse</Text>
+
+                    {(invitacionesMap[grupo.id] ?? []).length === 0 ? (
+                      <Text style={styles.invVacio}>No hay invitaciones activas. Genera una para sumar a un familiar.</Text>
+                    ) : (
+                      (invitacionesMap[grupo.id] ?? []).map((inv) => (
+                        <View key={inv.id} style={styles.invRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.codigoText}>{inv.token}</Text>
+                          </View>
+                          <TouchableOpacity onPress={() => setQrToken(inv.token)} style={styles.copyBtn}>
+                            <Ionicons name="qr-code-outline" size={18} color={Colors.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => copiarCodigo(inv.token)} style={styles.copyBtn}>
+                            <Ionicons name="copy-outline" size={18} color={Colors.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => handleRevocarInvitacion(grupo.id, inv.id)} style={styles.copyBtn}>
+                            <Ionicons name="trash-outline" size={18} color={Colors.error} />
+                          </TouchableOpacity>
+                        </View>
+                      ))
+                    )}
+
+                    <TouchableOpacity
+                      style={styles.invGenBtn}
+                      onPress={() => generarInvitacion(grupo.id)}
+                      disabled={generando === grupo.id}
+                      activeOpacity={0.85}
+                    >
+                      {generando === grupo.id ? (
+                        <ActivityIndicator color={Colors.primary} size="small" />
+                      ) : (
+                        <>
+                          <Ionicons name="add" size={18} color={Colors.primary} />
+                          <Text style={styles.invGenText}>Generar invitación</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
                   </View>
                 )}
 
@@ -358,6 +492,7 @@ export default function GrupoFamiliarScreen() {
                         key={f.id}
                         fam={f}
                         esMismo={f.id === cuidador?.id || f.email === cuidador?.email}
+                        onExpulsar={!esFamiliar ? () => handleExpulsarFamiliar(grupo.id, f.id, f.name || f.email) : undefined}
                       />
                     ))}
                   </View>
@@ -399,7 +534,12 @@ export default function GrupoFamiliarScreen() {
                 autoCapitalize="characters"
               />
             </View>
-            <TouchableOpacity style={[styles.modalBtn, uniendose && { opacity: 0.65 }]} onPress={handleUnirse} disabled={uniendose} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.scanBtn} onPress={abrirEscaner} disabled={uniendose} activeOpacity={0.8}>
+              <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
+              <Text style={styles.scanBtnText}>Escanear QR</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.modalBtn, uniendose && { opacity: 0.65 }]} onPress={() => handleUnirse()} disabled={uniendose} activeOpacity={0.85}>
               {uniendose ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.modalBtnText}>Unirse</Text>}
             </TouchableOpacity>
           </View>
@@ -452,6 +592,43 @@ export default function GrupoFamiliarScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal: QR de invitación (cuidador) */}
+      <Modal visible={!!qrToken} transparent animationType="fade" onRequestClose={() => setQrToken(null)}>
+        <View style={styles.qrOverlay}>
+          <View style={styles.qrModal}>
+            <View style={styles.qrHeader}>
+              <Text style={styles.qrTitle}>Invitación</Text>
+              <TouchableOpacity onPress={() => setQrToken(null)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.qrDesc}>Pide al familiar que escanee este código para unirse al grupo.</Text>
+            <View style={styles.qrWrap}>
+              {qrToken ? <QRCode value={qrToken} size={220} color={Colors.primary} backgroundColor={Colors.white} /> : null}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: escáner QR (familiar) */}
+      <Modal visible={escaneando} animationType="slide" onRequestClose={() => setEscaneando(false)}>
+        <View style={styles.scanRoot}>
+          <CameraView
+            style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={onCodigoEscaneado}
+          />
+          <View style={styles.scanOverlay}>
+            <View style={styles.scanMarco} />
+            <Text style={styles.scanTexto}>Apunta al código QR de la invitación</Text>
+          </View>
+          <TouchableOpacity style={styles.scanCancelar} onPress={() => setEscaneando(false)} activeOpacity={0.85}>
+            <Text style={styles.scanCancelarText}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
     </AnimatedScreen>
   )
@@ -487,6 +664,12 @@ const styles = StyleSheet.create({
   codigoHint:   { fontSize: 11, color: Colors.textSecondary, lineHeight: 15 },
   copyBtn:      { padding: 4, marginLeft: 8 },
 
+  invVacio:  { fontSize: 12, color: Colors.textSecondary, lineHeight: 17, marginBottom: 10 },
+  invRow:    { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  invGenBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: Colors.primary, borderStyle: 'dashed', borderRadius: 10, paddingVertical: 10, marginBottom: 8 },
+  invGenText:{ fontSize: 13, fontWeight: '700', color: Colors.primary },
+  expulsarBtn: { padding: 6, marginLeft: 4 },
+
   seccion:       { marginTop: 4, marginBottom: 4 },
   seccionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   seccionLabel:  { fontSize: 11, fontWeight: '700', color: Colors.primary, letterSpacing: 0.8 },
@@ -517,6 +700,23 @@ const styles = StyleSheet.create({
   pacChipTextActivo: { color: Colors.primary, fontWeight: '700' },
   modalBtn:     { backgroundColor: '#102e50', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   modalBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+
+  scanBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 12, paddingVertical: 14, marginBottom: 12 },
+  scanBtnText:  { color: Colors.primary, fontSize: 15, fontWeight: '700' },
+
+  qrOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  qrModal:  { backgroundColor: Colors.white, borderRadius: 24, padding: 24, alignItems: 'center', width: '100%', maxWidth: 360 },
+  qrHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
+  qrTitle:  { fontSize: 20, fontWeight: '700', color: Colors.text },
+  qrDesc:   { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginBottom: 20, lineHeight: 19 },
+  qrWrap:   { backgroundColor: Colors.white, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: Colors.border },
+
+  scanRoot:        { flex: 1, backgroundColor: '#000' },
+  scanOverlay:     { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 24 },
+  scanMarco:       { width: 240, height: 240, borderRadius: 24, borderWidth: 3, borderColor: Colors.white, backgroundColor: 'transparent' },
+  scanTexto:       { color: Colors.white, fontSize: 15, fontWeight: '600', textAlign: 'center', paddingHorizontal: 32 },
+  scanCancelar:    { position: 'absolute', bottom: 48, alignSelf: 'center', backgroundColor: Colors.white, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 40 },
+  scanCancelarText:{ color: Colors.text, fontSize: 16, fontWeight: '700' },
 
   successBox:  { position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10, flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: Colors.success, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
   successText: { flex: 1, color: '#065f46', fontSize: 13, lineHeight: 19 },

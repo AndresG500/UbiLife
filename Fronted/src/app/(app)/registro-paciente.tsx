@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, ScrollView, FlatList, Image, Alert,
@@ -75,7 +75,7 @@ function Sugerencias({ opciones, valor, onSelect }: {
 }
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import LottieView from 'lottie-react-native'
 import { Colors } from '@/constants/Colors'
 import { pacienteService, dispositivoService } from '@/services/api'
@@ -98,7 +98,6 @@ export default function RegistroPacienteScreen() {
   const [familiar_nombre,   setFamiliarNombre]    = useState('')
   const [familiar_telefono, setFamiliarTelefono]  = useState('')
   const [foto,              setFoto]              = useState<string | null>(null)
-  const [loading,           setLoading]           = useState(false)
   const [error,             setError]             = useState('')
 
   const [paso,                    setPaso]                    = useState<1 | 'buscando' | 2>(1)
@@ -115,6 +114,35 @@ export default function RegistroPacienteScreen() {
       iniciarBusqueda()
     }
   }, [paso])
+
+  // Deja el formulario y el flujo en blanco. Se llama al enfocar la pantalla
+  // (registrar a alguien nuevo) y tras un registro+vinculación exitoso.
+  const resetFormulario = () => {
+    setNombrePaciente('')
+    setEdadPaciente('')
+    setEnfermedad('')
+    setCedula('')
+    setEps('')
+    setFamiliarNombre('')
+    setFamiliarTelefono('')
+    setFoto(null)
+    setError('')
+    setPaso(1)
+    setEditando(false)
+    setPacienteId('')
+    setDispositivos([])
+    setDispositivoSeleccionado(null)
+    setErrorVinculo('')
+  }
+
+  // Al volver a enfocar la pantalla (navegar y regresar) se empieza limpio.
+  // "Volver al formulario" es un cambio interno de `paso`, no re-enfoca la
+  // pantalla, así que no borra lo que estás editando en ese momento.
+  useFocusEffect(
+    useCallback(() => {
+      resetFormulario()
+    }, [])
+  )
 
   const iniciarBusqueda = async () => {
     try {
@@ -183,7 +211,10 @@ export default function RegistroPacienteScreen() {
     setPaso('buscando')
   }
 
-  const handleGuardar = async () => {
+  // "Guardar paciente" NO escribe en la BD: solo valida y avanza a la búsqueda
+  // de dispositivos. El paciente se crea recién al vincular un GPS (handleVincular),
+  // para que no queden pacientes registrados sin dispositivo.
+  const handleGuardar = () => {
     if (nombre_paciente.trim().length < 2) {
       setError('El nombre debe tener al menos 2 caracteres.')
       return
@@ -213,48 +244,15 @@ export default function RegistroPacienteScreen() {
       setError('Ingresa el teléfono del contacto de emergencia (mínimo 7 dígitos).')
       return
     }
-    setLoading(true)
     setError('')
-    try {
-      // Modo edición: el paciente ya existe (venimos del paso 2) → actualizar y volver a vincular
-      if (editando && pacienteId) {
-        await pacienteService.actualizar(pacienteId, {
-          nombre_paciente:   nombre_paciente.trim(),
-          edad_paciente:     edadNum,
-          enfermedad:        enfermedad.trim(),
-          cedula:            cedula.trim(),
-          eps:               eps.trim(),
-          familiar_nombre:   familiar_nombre.trim(),
-          familiar_telefono: familiar_telefono.trim(),
-          ...(foto ? { foto } : {}),
-        })
-        setEditando(false)
-        setPaso(2)
-        return
-      }
 
-      const res = await pacienteService.registrar({
-        nombre_paciente:   nombre_paciente.trim(),
-        edad_paciente:     edadNum,
-        enfermedad:        enfermedad.trim(),
-        cedula:            cedula.trim(),
-        eps:               eps.trim(),
-        familiar_nombre:   familiar_nombre.trim(),
-        familiar_telefono: familiar_telefono.trim(),
-        id_cuidador:       cuidador?.id ?? '',
-        ...(foto ? { foto } : {}),
-      } as any)
-      const id = res.data?.id_paciente
-      if (id) {
-        setPacienteId(id)
-        setPaso('buscando')
-      } else {
-        router.replace('/(app)/pacientes')
-      }
-    } catch (err: any) {
-      setError(mensajeDeError(err, 'No se pudo registrar el paciente. Inténtalo de nuevo.'))
-    } finally {
-      setLoading(false)
+    // Si veníamos del paso 2 ("Volver al formulario"), regresamos a la lista de
+    // dispositivos ya buscada. Si es la primera vez, iniciamos la búsqueda.
+    if (editando) {
+      setEditando(false)
+      setPaso(2)
+    } else {
+      setPaso('buscando')
     }
   }
 
@@ -263,10 +261,32 @@ export default function RegistroPacienteScreen() {
     setVinculando(true)
     setErrorVinculo('')
     try {
-      await dispositivoService.vincular({ id_dispositivo: dispositivoSeleccionado, paciente_id: pacienteId })
+      // El paciente se crea aquí, la primera vez. Si el vínculo falla después,
+      // conservamos `pacienteId` para reintentar solo la vinculación sin volver
+      // a registrar ni perder los datos.
+      let id = pacienteId
+      if (!id) {
+        const res = await pacienteService.registrar({
+          nombre_paciente:   nombre_paciente.trim(),
+          edad_paciente:     parseInt(edad_paciente),
+          enfermedad:        enfermedad.trim(),
+          cedula:            cedula.trim(),
+          eps:               eps.trim(),
+          familiar_nombre:   familiar_nombre.trim(),
+          familiar_telefono: familiar_telefono.trim(),
+          id_cuidador:       cuidador?.id ?? '',
+          ...(foto ? { foto } : {}),
+        } as any)
+        id = res.data?.id_paciente
+        if (!id) throw new Error('No se pudo registrar el paciente.')
+        setPacienteId(id)
+      }
+
+      await dispositivoService.vincular({ id_dispositivo: dispositivoSeleccionado, paciente_id: id })
+      resetFormulario()
       router.replace('/(app)/pacientes')
     } catch (err: any) {
-      setErrorVinculo(mensajeDeError(err, 'No se pudo vincular el dispositivo. Inténtalo de nuevo.'))
+      setErrorVinculo(mensajeDeError(err, 'No se pudo registrar o vincular. Inténtalo de nuevo.'))
     } finally {
       setVinculando(false)
     }
@@ -370,6 +390,14 @@ export default function RegistroPacienteScreen() {
                 >
                   <Ionicons name="arrow-back" size={16} color="#102e50" />
                   <Text style={styles.volverFormText}>Volver al formulario</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.salirBtn}
+                  onPress={() => router.replace('/(app)')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.salirText}>Salir</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -536,19 +564,12 @@ export default function RegistroPacienteScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.btn, loading && styles.btnDisabled]}
+            style={styles.btn}
             onPress={handleGuardar}
-            disabled={loading}
             activeOpacity={0.85}
           >
-            {loading
-              ? <ActivityIndicator color={Colors.white} />
-              : (
-                <>
-                  <Ionicons name="checkmark-circle-outline" size={20} color={Colors.white} style={{ marginRight: 8 }} />
-                  <Text style={styles.btnText}>{editando ? 'Guardar cambios' : 'Guardar paciente'}</Text>
-                </>
-              )}
+            <Ionicons name="checkmark-circle-outline" size={20} color={Colors.white} style={{ marginRight: 8 }} />
+            <Text style={styles.btnText}>{editando ? 'Guardar cambios' : 'Guardar paciente'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -614,6 +635,8 @@ const styles = StyleSheet.create({
   skipText: { fontSize: 14, color: Colors.textSecondary, textDecorationLine: 'underline' },
   volverFormBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#102e50', marginTop: 12 },
   volverFormText: { fontSize: 14, fontWeight: '600', color: '#102e50' },
+  salirBtn:       { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  salirText:      { fontSize: 14, color: Colors.textSecondary, textDecorationLine: 'underline' },
 
   fotoContainer:   { alignItems: 'center', marginBottom: 20, marginTop: 4 },
   fotoBtn:         { position: 'relative', marginBottom: 8 },

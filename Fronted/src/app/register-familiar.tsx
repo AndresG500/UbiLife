@@ -24,7 +24,7 @@ export default function RegisterFamiliarScreen() {
   const [error,           setError]           = useState('')
   const [errorEsServidor, setErrorEsServidor] = useState(false)
   const [success,         setSuccess]         = useState(false)
-  const [step,      setStep]      = useState<'registro' | 'codigo'>('registro')
+  const [unidoGrupo,      setUnidoGrupo]      = useState(false)
   const router = useRouter()
 
   const validate = () => {
@@ -94,7 +94,8 @@ export default function RegisterFamiliarScreen() {
       if (foto) payload.foto = foto
       if (codigo.trim()) payload.codigo_grupo = codigo.trim()
 
-      await familiarService.registrar(payload)
+      const res = await familiarService.registrar(payload)
+      setUnidoGrupo(!!res?.data?.unido_a_grupo)
       setSuccess(true)
     } catch (err: any) {
       const status = err?.response?.status
@@ -127,7 +128,9 @@ export default function RegisterFamiliarScreen() {
           </View>
           <Text style={styles.successTitle}>¡Cuenta creada!</Text>
           <Text style={styles.successSub}>
-            Te has unido al grupo familiar exitosamente. Ya puedes ver a los pacientes.
+            {unidoGrupo
+              ? 'Te has unido al grupo familiar exitosamente. Ya puedes ver a los pacientes.'
+              : 'Tu cuenta está lista. Inicia sesión y únete a un grupo con el código que te dé el cuidador.'}
           </Text>
           <TouchableOpacity
             style={styles.successBtn}
@@ -163,66 +166,6 @@ export default function RegisterFamiliarScreen() {
             <Text style={styles.tagline}>Regístrate como familiar</Text>
           </View>
 
-          {step === 'codigo' && (
-            <View style={styles.codigoSection}>
-              <TouchableOpacity 
-                style={styles.backToFormBtn} 
-                onPress={() => { setStep('registro'); setCodigo(''); setError(''); }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="arrow-back" size={16} color={Colors.primary} />
-                <Text style={styles.backToFormText}>Volver</Text>
-              </TouchableOpacity>
-
-              <View style={styles.codigoCard}>
-                <View style={styles.codigoIcon}>
-                  <Ionicons name="key" size={32} color={Colors.primary} />
-                </View>
-                <Text style={styles.codigoTitle}>Código de grupo familiar</Text>
-                <Text style={styles.codigoDesc}>
-                  Ingresa el código que te proporcionó el cuidador principal para unirte al grupo.
-                </Text>
-
-                {error ? (
-                  <View style={errorEsServidor ? styles.errorBox : styles.warningBox}>
-                    <Ionicons
-                      name="warning-outline"
-                      size={15}
-                      color={errorEsServidor ? Colors.error : Colors.warning}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text style={errorEsServidor ? styles.errorText : styles.warningText}>{error}</Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.inputWrap}>
-                  <Ionicons name="qr-code" size={18} color={Colors.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej: FAM-ABC123"
-                    placeholderTextColor={Colors.textSecondary}
-                    value={codigo}
-                    onChangeText={setCodigo}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.btn, loading && styles.btnDisabled]}
-                  onPress={handleRegister}
-                  disabled={loading}
-                  activeOpacity={0.85}
-                >
-                  {loading
-                    ? <ActivityIndicator color={Colors.white} />
-                    : <Text style={styles.btnText}>Unirse al grupo</Text>}
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {step === 'registro' && (
             <View style={styles.card}>
 
               {error ? (
@@ -333,17 +276,36 @@ export default function RegisterFamiliarScreen() {
                 </View>
               </View>
 
+              <View style={styles.field}>
+                <Text style={styles.label}>
+                  Código de invitación <Text style={styles.opt}>(opcional)</Text>
+                </Text>
+                <View style={styles.inputWrap}>
+                  <Ionicons name="key-outline" size={18} color={Colors.textSecondary} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ej: FAM-ABC123"
+                    placeholderTextColor={Colors.textSecondary}
+                    value={codigo}
+                    onChangeText={(t) => setCodigo(t.toUpperCase())}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                  />
+                </View>
+                <Text style={styles.codigoAyuda}>
+                  ¿No tienes código? Puedes unirte a un grupo más tarde desde la app.
+                </Text>
+              </View>
+
               <TouchableOpacity
                 style={[styles.btn, loading && styles.btnDisabled]}
-                onPress={() => {
-                  const validationError = validate()
-                  if (validationError) { setError(validationError); return }
-                  setStep('codigo')
-                }}
+                onPress={handleRegister}
                 disabled={loading}
                 activeOpacity={0.85}
               >
-                <Text style={styles.btnText}>Continuar</Text>
+                {loading
+                  ? <ActivityIndicator color={Colors.white} />
+                  : <Text style={styles.btnText}>Crear cuenta</Text>}
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -358,7 +320,6 @@ export default function RegisterFamiliarScreen() {
               </TouchableOpacity>
 
             </View>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
       </SafeAreaView>
@@ -526,6 +487,12 @@ const styles = StyleSheet.create({
   },
   req: {
     color: Colors.error,
+  },
+  codigoAyuda: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 6,
+    lineHeight: 15,
   },
   opt: {
     color: Colors.textSecondary,
