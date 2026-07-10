@@ -341,11 +341,13 @@ async def guardar_ubicacion_cuidador(datos: UbicacionCuidador):
 
 async def obtener_ubicaciones_grupo(grupo_id: str, cuidador_solicitante_id: str):
     try:
-        db              = get_database()
-        col_grupos      = db["Grupos"]
-        col_ubicaciones = db["UbicacionesCuidadores"]
-        col_cuidadores  = db["Cuidadores"]
-        col_pacientes   = db["Pacientes"]
+        db                = get_database()
+        col_grupos        = db["Grupos"]
+        col_ubicaciones   = db["UbicacionesCuidadores"]
+        col_ub_familiares = db["UbicacionesFamiliares"]
+        col_cuidadores    = db["Cuidadores"]
+        col_familiares    = db["Familiares"]
+        col_pacientes     = db["Pacientes"]
 
         grupo = await col_grupos.find_one({"_id": ObjectId(grupo_id)})
         if not grupo:
@@ -371,6 +373,21 @@ async def obtener_ubicaciones_grupo(grupo_id: str, cuidador_solicitante_id: str)
                 pass
             ubicaciones_cuidadores.append(ub)
 
+        # Ubicaciones de familiares del grupo (para que el cuidador los vea en el mapa)
+        ubicaciones_familiares = []
+        async for ub in col_ub_familiares.find({"familiar_id": {"$in": grupo.get("familiar_ids", [])}}):
+            ub.pop("_id", None)
+            ub["tipo"] = "familiar"
+            try:
+                perfil = await col_familiares.find_one({"_id": ObjectId(ub["familiar_id"])})
+                if perfil:
+                    ub["nombre"]   = perfil.get("name", "")
+                    ub["telefono"] = perfil.get("phone")
+                    ub["foto"]     = perfil.get("foto")
+            except Exception:
+                pass
+            ubicaciones_familiares.append(ub)
+
         # Ultima ubicacion de cada paciente
         ubicaciones_pacientes = []
         for paciente_id in grupo["paciente_ids"]:
@@ -385,6 +402,7 @@ async def obtener_ubicaciones_grupo(grupo_id: str, cuidador_solicitante_id: str)
         Logger.add_to_log("info", f"Ubicaciones obtenidas para grupo: {grupo_id}")
         return {
             "cuidadores": ubicaciones_cuidadores,
+            "familiares": ubicaciones_familiares,
             "pacientes":  ubicaciones_pacientes
         }
 
