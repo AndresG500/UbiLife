@@ -421,6 +421,7 @@ export default function MapScreen() {
           for (const g of gruposList) {
             const ubs = await obtenerUbicacionesGrupo(g.id)
             todasUbicaciones.push(...ubs.cuidadores)
+            todasFamiliares.push(...(ubs.familiares ?? []))
           }
         } catch {}
       } else {
@@ -529,9 +530,17 @@ export default function MapScreen() {
   }, [gpsActivo, ubicacion, selPacId])
 
   useEffect(() => {
+    // Al cambiar de cuenta/rol, reiniciar por completo el mapa para no arrastrar
+    // marcadores de la sesión anterior (p. ej. familiares que quedaban pegados
+    // tras pasar de una cuenta familiar a una de cuidador).
+    mapaListo.current = false
     gruposRef.current = []
     gruposFamiliarRef.current = []
-  }, [tipoUsuario])
+    zonasRef.current = []
+    setMapHtml('')
+    setSelPacId(null)
+    setPacientes([])
+  }, [tipoUsuario, cuidador?.id])
 
   useEffect(() => {
     if (authLoading || !token || tipoUsuario === 'familiar') return
@@ -544,10 +553,15 @@ export default function MapScreen() {
       for (const g of gs) {
         enviarUbicacionCuidador(g.id, latitude, longitude)
       }
-      const miId = cuidador?.id ?? 'yo'
-      const datos = JSON.stringify({ nombre: cuidador?.name ?? 'Tú', telefono: cuidador?.phone ?? '', foto: cuidador?.foto ?? '', tipo: 'cuidador' })
-      const js = `updateCuidador('${miId}', ${latitude}, ${longitude}, ${datos}); true;`
-      webViewRef.current?.injectJavaScript(js)
+      // Marcador propio: usar SIEMPRE el id real (mismo que usa el backend) para que
+      // el marcador local se fusione con el eco del grupo y no aparezca duplicado.
+      // Si no hay id disponible, no se dibuja local: el backend igual lo refleja.
+      const miId = cuidador?.id
+      if (miId) {
+        const datos = JSON.stringify({ nombre: cuidador?.name ?? 'Tú', telefono: cuidador?.phone ?? '', foto: cuidador?.foto ?? '', tipo: 'cuidador' })
+        const js = `updateCuidador('${miId}', ${latitude}, ${longitude}, ${datos}); true;`
+        webViewRef.current?.injectJavaScript(js)
+      }
     })
       .then((sub) => {
         if (cancelado) sub.remove()
@@ -573,10 +587,15 @@ export default function MapScreen() {
         const gId = g.id ?? g.grupo_id ?? g._id
         if (gId) enviarUbicacionFamiliar(gId, latitude, longitude)
       }
-      const miId = cuidador?.id ?? 'yo_familiar'
-      const datos = JSON.stringify({ nombre: cuidador?.name ?? 'Tú', telefono: cuidador?.phone ?? '', foto: cuidador?.foto ?? '', tipo: 'familiar' })
-      const js = `updateFamiliar('${miId}', ${latitude}, ${longitude}, ${datos}); true;`
-      webViewRef.current?.injectJavaScript(js)
+      // Marcador propio: usar SIEMPRE el id real (mismo que usa el backend) para que
+      // el marcador local se fusione con el eco del grupo y no aparezca duplicado.
+      // Si no hay id disponible, no se dibuja local: el backend igual lo refleja.
+      const miId = cuidador?.id
+      if (miId) {
+        const datos = JSON.stringify({ nombre: cuidador?.name ?? 'Tú', telefono: cuidador?.phone ?? '', foto: cuidador?.foto ?? '', tipo: 'familiar' })
+        const js = `updateFamiliar('${miId}', ${latitude}, ${longitude}, ${datos}); true;`
+        webViewRef.current?.injectJavaScript(js)
+      }
     })
       .then((sub) => {
         if (cancelado) sub.remove()

@@ -66,16 +66,16 @@ export interface UbicacionFamiliar {
 
 export const obtenerUbicacionesGrupo = async (
   grupoId: string
-): Promise<{ cuidadores: UbicacionCuidador[]; pacientes: any[] }> => {
+): Promise<{ cuidadores: UbicacionCuidador[]; familiares: UbicacionFamiliar[]; pacientes: any[] }> => {
   try {
     const res = await api.get(`/grupos/${grupoId}/ubicaciones`)
-    return res.data ?? { cuidadores: [], pacientes: [] }
+    return res.data ?? { cuidadores: [], familiares: [], pacientes: [] }
   } catch (err: any) {
     const status = err?.response?.status
     if (status !== 404) {
       console.warn('[ubicacion] obtenerUbicacionesGrupo error:', status, err?.response?.data)
     }
-    return { cuidadores: [], pacientes: [] }
+    return { cuidadores: [], familiares: [], pacientes: [] }
   }
 }
 
