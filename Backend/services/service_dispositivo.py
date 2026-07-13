@@ -63,7 +63,7 @@ async def obtener_dispositivo(id_dispositivo: str, cuidador_email: str):
             return {"mensaje": "No se encontró el dispositivo"}
 
         if not await _cuidador_es_dueno_del_dispositivo(dispositivo, cuidador_email):
-            Logger.add_to_log("warn", f"Acceso no autorizado al dispositivo {id_dispositivo} por {cuidador_email}")
+            Logger.add_to_log("warn", f"Acceso no autorizado al dispositivo {id_dispositivo}")
             return {"error": "No tienes permiso para ver este dispositivo"}
 
         dispositivo["id"] = str(dispositivo["_id"])
@@ -90,7 +90,7 @@ async def obtener_dispositivo_por_paciente(paciente_id: str, cuidador_email: str
 
         paciente = await db["Pacientes"].find_one({"_id": paciente_oid})
         if not paciente or str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
-            Logger.add_to_log("warn", f"Acceso no autorizado al paciente {paciente_id} por {cuidador_email}")
+            Logger.add_to_log("warn", f"Acceso no autorizado al paciente {paciente_id}")
             return {"error": "No tienes permiso para ver este paciente"}
 
         dispositivo = await db["Dispositivos"].find_one({"paciente_id": paciente_id})
@@ -127,7 +127,7 @@ async def actualizar_dispositivo(id_dispositivo: str, datos: ActualizarDispositi
 
             paciente = await coleccion_pacientes.find_one({"_id": ObjectId(dispositivo["paciente_id"])})
             if paciente and str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
-                Logger.add_to_log("warn", f"Actualización no autorizada: {cuidador_email} vs dispositivo {id_dispositivo}")
+                Logger.add_to_log("warn", f"Actualización no autorizada: dispositivo {id_dispositivo}")
                 return {"error": "No tienes permiso para actualizar este dispositivo"}
 
         campos = {}
@@ -170,7 +170,7 @@ async def desvincular_dispositivo(id_dispositivo: str, cuidador_email: str):
 
             paciente = await coleccion_pacientes.find_one({"_id": ObjectId(dispositivo["paciente_id"])})
             if paciente and str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
-                Logger.add_to_log("warn", f"Desvinculación no autorizada: {cuidador_email} vs dispositivo {id_dispositivo}")
+                Logger.add_to_log("warn", f"Desvinculación no autorizada: dispositivo {id_dispositivo}")
                 return {"error": "No tienes permiso para desvincular este dispositivo"}
 
             await coleccion_pacientes.update_one(

@@ -34,7 +34,7 @@ async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← 
 
         cuidador = await col_cuidadores.find_one({"email": cuidador_email})  # ← busca por email
         if not cuidador:
-            Logger.add_to_log("warn", f"Cuidador no encontrado: {cuidador_email}")
+            Logger.add_to_log("warn", "Cuidador no encontrado")
             return {"mensaje": "No se encontró el cuidador especificado"}
 
         resultado = await coleccion.insert_one({
@@ -62,7 +62,7 @@ async def registrar_paciente(datos: CrearPaciente, cuidador_email: str):  # ← 
             {"$push": {"patient_ids": str(resultado.inserted_id)}}
         )
 
-        Logger.add_to_log("info", f"Paciente registrado: {datos.nombre_paciente}")
+        Logger.add_to_log("info", "Paciente registrado")
         return {"mensaje": "Paciente registrado exitosamente", "id_paciente": str(resultado.inserted_id)}
 
     except Exception as ex:
@@ -113,7 +113,7 @@ async def borrar_paciente(patient_id: str, cuidador_email: str):
             return {"mensaje": "No se encontró el paciente"}
 
         if str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
-            Logger.add_to_log("warn", f"Eliminación no autorizada: {cuidador_email} vs paciente {patient_id}")
+            Logger.add_to_log("warn", f"Eliminación no autorizada: paciente {patient_id}")
             return {"error": "No tienes permiso para eliminar este paciente"}
 
         await coleccion.delete_one({"_id": ObjectId(patient_id)})
@@ -145,7 +145,7 @@ async def actualizar_paciente(patient_id: str, datos: ActualizarPaciente, cuidad
             return {"mensaje": "No se encontró el paciente"}
 
         if str(paciente.get("id_cuidador")) != str(cuidador["_id"]):
-            Logger.add_to_log("warn", f"Actualización no autorizada: {cuidador_email} vs paciente {patient_id}")
+            Logger.add_to_log("warn", f"Actualización no autorizada: paciente {patient_id}")
             return {"error": "No tienes permiso para actualizar este paciente"}
 
         campos = {}
@@ -201,7 +201,7 @@ async def listar_pacientes(cuidador_email: str):
                     paciente[campo] = descifrar(paciente[campo])
             pacientes.append(paciente)
 
-        Logger.add_to_log("info", f"Pacientes listados para cuidador: {cuidador_email}")
+        Logger.add_to_log("info", "Pacientes listados para cuidador")
         return pacientes
 
     except Exception as ex:

@@ -16,11 +16,11 @@ async def registrar_cuidador(datos: CrearCuidador):
         coleccion = get_database()["Cuidadores"]
 
         if await coleccion.find_one({"email": datos.email}):
-            Logger.add_to_log("warn", f"Correo ya registrado: {datos.email}")
+            Logger.add_to_log("warn", "Correo ya registrado")
             return {"error": "No se pudo completar el registro. Verifica tus datos."}
 
         if datos.phone and await coleccion.find_one({"phone": datos.phone}):
-            Logger.add_to_log("warn", f"Teléfono ya registrado: {datos.phone}")
+            Logger.add_to_log("warn", "Teléfono ya registrado")
             return {"error": "No se pudo completar el registro. Verifica tus datos."}
 
         hashed = bcrypt.hashpw(datos.password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
@@ -47,7 +47,7 @@ async def registrar_cuidador(datos: CrearCuidador):
 async def borrar_cuidador(email: str, email_solicitante: str):
     try:
         if email != email_solicitante:
-            Logger.add_to_log("warn", f"Intento de eliminación no autorizado: {email_solicitante} tried to delete {email}")
+            Logger.add_to_log("warn", "Intento de eliminación no autorizado")
             return {"error": "No tienes permiso para eliminar esta cuenta"}
 
         db = get_database()
@@ -55,7 +55,7 @@ async def borrar_cuidador(email: str, email_solicitante: str):
         cuidador = await coleccion.find_one({"email": email})
 
         if not cuidador:
-            Logger.add_to_log("warn", f"Cuidador no encontrado para eliminar: {email}")
+            Logger.add_to_log("warn", "Cuidador no encontrado para eliminar")
             return {"mensaje": "No se encontró la cuenta"}
 
         cuidador_id = str(cuidador["_id"])
@@ -82,7 +82,7 @@ async def borrar_cuidador(email: str, email_solicitante: str):
         await db["UbicacionesCuidadores"].delete_one({"cuidador_id": cuidador_id})
 
         await coleccion.delete_one({"email": email})
-        Logger.add_to_log("info", f"Cuidador eliminado con cascade: {email}")
+        Logger.add_to_log("info", "Cuidador eliminado con cascade")
         return {"mensaje": "Cuenta eliminada exitosamente"}
 
     except Exception as ex:
@@ -93,14 +93,14 @@ async def borrar_cuidador(email: str, email_solicitante: str):
 async def actualizar_cuidador(email: str, datos: ActualizarCuidador, email_solicitante: str):
     try:
         if email != email_solicitante:
-            Logger.add_to_log("warn", f"Intento de actualización no autorizado: {email_solicitante} tried to update {email}")
+            Logger.add_to_log("warn", "Intento de actualización no autorizado")
             return {"error": "No tienes permiso para actualizar esta cuenta"}
 
         coleccion = get_database()["Cuidadores"]
         cuidador = await coleccion.find_one({"email": email})
 
         if not cuidador:
-            Logger.add_to_log("warn", f"Cuidador no encontrado para actualizar: {email}")
+            Logger.add_to_log("warn", "Cuidador no encontrado para actualizar")
             return {"mensaje": "No se encontró la cuenta"}
 
         campos = {}
@@ -116,11 +116,11 @@ async def actualizar_cuidador(email: str, datos: ActualizarCuidador, email_solic
             ).decode("utf-8")
 
         if not campos:
-            Logger.add_to_log("warn", f"No se enviaron campos para actualizar: {email}")
+            Logger.add_to_log("warn", "No se enviaron campos para actualizar")
             return {"mensaje": "No se enviaron campos para actualizar"}
 
         await coleccion.update_one({"email": email}, {"$set": campos})
-        Logger.add_to_log("info", f"Cuidador actualizado: {email}")
+        Logger.add_to_log("info", "Cuidador actualizado")
         return {"mensaje": "Cuenta actualizada exitosamente"}
 
     except Exception as ex:
@@ -141,16 +141,16 @@ async def verificar_cuidador(email: str, password: str):
         await asyncio.sleep(AUTH_DELAY)
 
         if not cuidador or not es_valida:
-            Logger.add_to_log("warn", f"Verificación fallida: {email}")
+            Logger.add_to_log("warn", "Verificación fallida")
             return {"mensaje": "Credenciales inválidas"}
 
         if not cuidador.get("activo", True):
-            Logger.add_to_log("warn", f"Intento de login en cuenta inactiva: {email}")
+            Logger.add_to_log("warn", "Intento de login en cuenta inactiva")
             return {"mensaje": "Credenciales inválidas"}
 
         token = crear_token({"sub": cuidador["email"]})
 
-        Logger.add_to_log("info", f"Verificación exitosa: {email}")
+        Logger.add_to_log("info", "Verificación exitosa")
         return {
             "access_token": token,
             "token_type":   "bearer",
@@ -177,7 +177,7 @@ async def actualizar_fcm(email: str, fcm_token: str):
         )
         if resultado.matched_count == 0:
             return {"error": "Cuidador no encontrado"}
-        Logger.add_to_log("info", f"FCM token actualizado para: {email}")
+        Logger.add_to_log("info", "FCM token actualizado")
         return {"mensaje": "Token FCM actualizado exitosamente"}
     except Exception as ex:
         Logger.add_to_log("error", f"Error al actualizar FCM token: {ex}")

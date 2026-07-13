@@ -18,7 +18,7 @@ async def registrar_familiar(datos: CrearFamiliar):
         col_familiares = db["Familiares"]
 
         if await col_familiares.find_one({"email": datos.email}):
-            Logger.add_to_log("warn", f"Email familiar ya registrado: {datos.email}")
+            Logger.add_to_log("warn", "Email familiar ya registrado")
             return {"error": "No se pudo completar el registro. Verifica tus datos."}
 
         hashed = bcrypt.hashpw(
@@ -47,7 +47,7 @@ async def registrar_familiar(datos: CrearFamiliar):
             res   = await consumir_invitacion(datos.codigo_grupo, familiar_id)
             unido = "grupo_id" in res
 
-        Logger.add_to_log("info", f"Familiar registrado: {datos.email}")
+        Logger.add_to_log("info", "Familiar registrado")
         return {"mensaje": "Familiar registrado exitosamente", "unido_a_grupo": unido}
 
     except Exception as ex:
@@ -67,16 +67,16 @@ async def verificar_familiar(email: str, password: str):
         await asyncio.sleep(AUTH_DELAY)
 
         if not familiar or not es_valida:
-            Logger.add_to_log("warn", f"Verificación familiar fallida: {email}")
+            Logger.add_to_log("warn", "Verificación familiar fallida")
             return {"mensaje": "Credenciales inválidas"}
 
         if not familiar.get("activo", True):
-            Logger.add_to_log("warn", f"Familiar inactivo intentó iniciar sesión: {email}")
+            Logger.add_to_log("warn", "Familiar inactivo intentó iniciar sesión")
             return {"mensaje": "Credenciales inválidas"}
 
         token = crear_token({"sub": familiar["email"]})
 
-        Logger.add_to_log("info", f"Familiar verificado: {email}")
+        Logger.add_to_log("info", "Familiar verificado")
         return {
             "access_token": token,
             "token_type":   "bearer",
@@ -123,7 +123,7 @@ async def actualizar_fcm_familiar(email: str, fcm_token: str):
         )
         if resultado.matched_count == 0:
             return {"error": "Familiar no encontrado"}
-        Logger.add_to_log("info", f"FCM token familiar actualizado para: {email}")
+        Logger.add_to_log("info", "FCM token familiar actualizado")
         return {"mensaje": "Token FCM actualizado exitosamente"}
     except Exception as ex:
         Logger.add_to_log("error", f"Error al actualizar FCM token familiar: {ex}")

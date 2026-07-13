@@ -34,7 +34,7 @@ async def crear_admin(datos: CrearAdmin):
             "activo":         True,
             "fecha_creacion": datetime.now(timezone.utc),
         })
-        Logger.add_to_log("info", f"Admin creado: {datos.email}")
+        Logger.add_to_log("info", "Admin creado")
         return {"mensaje": "Administrador creado exitosamente"}
     except Exception as ex:
         Logger.add_to_log("error", f"Error creando admin: {ex}")
@@ -52,11 +52,11 @@ async def verificar_admin(email: str, password: str):
         await asyncio.sleep(AUTH_DELAY)
 
         if not admin or not es_valida or not admin.get("activo", True):
-            Logger.add_to_log("warn", f"Login admin fallido: {email}")
+            Logger.add_to_log("warn", "Login admin fallido")
             return {"error": "Credenciales inválidas"}
 
         token = crear_token({"sub": admin["email"]})
-        Logger.add_to_log("info", f"Login admin exitoso: {email}")
+        Logger.add_to_log("info", "Login admin exitoso")
         return {
             "access_token": token,
             "token_type":   "bearer",
